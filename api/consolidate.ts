@@ -164,7 +164,7 @@ REGLAS OBLIGATORIAS DE EXTRACCIÓN Y HOMOLOGACIÓN:
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: "gemini-3.6-flash",
       contents: { parts },
       config: {
         systemInstruction,
