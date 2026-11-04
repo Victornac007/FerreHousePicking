@@ -6,7 +6,6 @@ import {
   Edit3,
   Check,
   Sparkles,
-  PlayCircle,
   FolderUp,
   AlertCircle,
   Loader2,
@@ -22,7 +21,6 @@ interface AccountUploadSectionProps {
   onRemoveSlotFile: (index: number) => void;
   onClearAllFiles: () => void;
   onConsolidateWithGemini: () => Promise<void>;
-  onLoadDemoData: () => void;
 }
 
 export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
@@ -34,7 +32,6 @@ export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
   onRemoveSlotFile,
   onClearAllFiles,
   onConsolidateWithGemini,
-  onLoadDemoData,
 }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
@@ -123,23 +120,11 @@ export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
             1. Recepción de Órdenes por Cuenta (Mercado Libre)
           </h2>
           <p className="text-sm text-slate-600 mt-0.5">
-            Sube hasta 5 resúmenes de ventas o planillas de colecta en PDF. Puedes personalizar el nombre de cada tienda haciendo clic en el icono de lápiz.
+            Sube hasta 5 resúmenes de ventas o planillas de colecta en PDF. Las 5 cuentas y la tabla de picking se vacían automáticamente cada nuevo día para iniciar tu jornada limpia.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={onLoadDemoData}
-            disabled={isProcessing}
-            className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-2 text-xs font-bold text-[#2d3277] bg-[#ffe600] hover:bg-[#ebd300] active:bg-[#d8c200] border border-[#d8c200] rounded-lg transition-colors cursor-pointer disabled:opacity-50 max-w-full whitespace-nowrap shadow-xs"
-          >
-            <PlayCircle className="w-4 h-4 shrink-0" />
-            <span className="truncate">
-              Cargar Datos de Demostración (Ejemplo 25 Taladros)
-            </span>
-          </button>
-
           <button
             type="button"
             onClick={() => batchInputRef.current?.click()}

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from "react";
-import { Printer, PlusCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
+import React, { useState, useMemo, useEffect } from "react";
+import { Printer, PlusCircle, AlertTriangle, CheckCircle2, Clock, RotateCcw, Sparkles } from "lucide-react";
 import {
   AccountSlot,
   PickingItem,
@@ -15,7 +15,6 @@ import {
   calculatePickingKPIs,
   filterAndSortPickingItems,
   generatePickingCsvWithBom,
-  getDemoPickingData,
 } from "./utils/pickingLogic";
 import { AccountUploadSection } from "./components/AccountUploadSection";
 import { KpiSummaryStrip } from "./components/KpiSummaryStrip";
@@ -79,6 +78,16 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+const STORAGE_KEY_WORKING_DAY = "ferrehouse_picking_last_working_day";
+const STORAGE_KEY_SESSION_DATA = "ferrehouse_picking_session_data";
+
+function getLocalDateString(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export default function App() {
   // Production operational mode: Start with clean accounts and an empty list ready for real daily PDF uploads.
@@ -98,6 +107,69 @@ export default function App() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+
+  // Autolimpieza diaria automática y gestión de sesión en el mismo día
+  useEffect(() => {
+    const today = getLocalDateString();
+    const storedDay = localStorage.getItem(STORAGE_KEY_WORKING_DAY);
+
+    if (storedDay && storedDay !== today) {
+      // ¡Cambio de fecha detectado! Ejecutar autolimpieza de la jornada anterior
+      localStorage.removeItem(STORAGE_KEY_SESSION_DATA);
+      localStorage.setItem(STORAGE_KEY_WORKING_DAY, today);
+      setSlots(INITIAL_SLOTS);
+      setItems([]);
+      setResumenOperativo("");
+      setStatusNotice(
+        `Autolimpieza diaria ejecutada: ¡Bienvenido a la jornada del ${new Date().toLocaleDateString("es-CL", { dateStyle: "long" })}! Se han vaciado los PDFs e ítems del día anterior.`
+      );
+    } else {
+      localStorage.setItem(STORAGE_KEY_WORKING_DAY, today);
+      const savedSessionStr = localStorage.getItem(STORAGE_KEY_SESSION_DATA);
+      if (savedSessionStr) {
+        try {
+          const parsed = JSON.parse(savedSessionStr);
+          if (parsed && Array.isArray(parsed.slots) && Array.isArray(parsed.items)) {
+            setSlots(parsed.slots);
+            setItems(parsed.items);
+            if (typeof parsed.resumenOperativo === "string") {
+              setResumenOperativo(parsed.resumenOperativo);
+            }
+          }
+        } catch (e) {
+          console.error("Error al restaurar datos de sesión activa:", e);
+        }
+      }
+    }
+  }, []);
+
+  // Guardar estado en localStorage durante el mismo día cuando hayan datos activos
+  useEffect(() => {
+    const hasData = items.length > 0 || slots.some((s) => s.base64Data !== null);
+    if (hasData) {
+      const payload = { slots, items, resumenOperativo };
+      localStorage.setItem(STORAGE_KEY_SESSION_DATA, JSON.stringify(payload));
+    } else {
+      localStorage.removeItem(STORAGE_KEY_SESSION_DATA);
+    }
+  }, [slots, items, resumenOperativo]);
+
+  const handleManualResetDay = () => {
+    const hasData = items.length > 0 || slots.some((s) => s.base64Data !== null);
+    if (hasData) {
+      const confirmed = window.confirm(
+        "¿Confirmas que deseas reiniciar la jornada? Se eliminarán todos los archivos PDF cargados y la tabla de picking actual."
+      );
+      if (!confirmed) return;
+    }
+
+    setSlots(INITIAL_SLOTS);
+    setItems([]);
+    setResumenOperativo("");
+    localStorage.removeItem(STORAGE_KEY_SESSION_DATA);
+    localStorage.setItem(STORAGE_KEY_WORKING_DAY, getLocalDateString());
+    setStatusNotice("Jornada reiniciada. PDFs e ítems de picking vaciados para un nuevo inicio.");
+  };
 
   const accountNames = useMemo(() => slots.map((s) => s.name), [slots]);
   const uploadedSlotsCount = useMemo(
@@ -322,25 +394,6 @@ export default function App() {
     }
   };
 
-  const handleLoadDemoData = () => {
-    setErrorBanner(null);
-    const demo = getDemoPickingData();
-    setSlots((prev) =>
-      prev.map((slot, idx) => ({
-        ...slot,
-        name: demo.accountNames[idx] || slot.name,
-      }))
-    );
-    setItems(demo.items);
-    setResumenOperativo(demo.resumenOperativo);
-    setSearchQuery("");
-    setStatusFilter("all");
-    setAccountFilter(null);
-    setStatusNotice(
-      "Datos de demostración cargados: Ejemplo de 25 Taladros DeWalt (5 por cada una de las 5 cuentas) + 7 SKUs ferreteros adicionales."
-    );
-  };
-
   const handleToggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -409,7 +462,7 @@ export default function App() {
             className="flex items-center gap-2 text-base sm:text-lg font-extrabold tracking-tight text-[#2d3277] whitespace-nowrap shrink-0 hover:opacity-90 transition-opacity"
           >
             <span className="w-2.5 h-2.5 rounded-full bg-[#2d3277] shrink-0" aria-hidden="true" />
-            <span>FerreHousePicking</span>
+            <span>Picking FerreHouse</span>
             <span className="hidden sm:inline text-xs font-semibold px-2 py-0.5 rounded bg-[#2d3277]/10 text-[#2d3277]">
               Mercado Envíos
             </span>
@@ -476,13 +529,30 @@ export default function App() {
               <span className="font-mono-tabular">Orden {orderNumber}</span>
               <span aria-hidden="true">·</span>
               <span>{formattedDate}</span>
+              <span aria-hidden="true">·</span>
+              <span
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-300 shadow-2xs"
+                title="Los archivos PDF e ítems de la tabla se vacían automáticamente a la medianoche (00:00 h) para iniciar cada nuevo día con la hoja limpia"
+              >
+                <Clock className="w-3 h-3 text-emerald-700" />
+                Autolimpieza diaria (00:00 h)
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mt-1">
-              Consolidador de Picking Multi-Cuenta Mercado Libre
+              Picking FerreHouse
             </h1>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleManualResetDay}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title="Vaciar PDFs e ítems de picking para iniciar una nueva jornada de trabajo"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              <span>Reiniciar Jornada</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsManualModalOpen(true)}
@@ -551,7 +621,6 @@ export default function App() {
           onRemoveSlotFile={handleRemoveSlotFile}
           onClearAllFiles={handleClearAllFiles}
           onConsolidateWithGemini={handleConsolidateWithGemini}
-          onLoadDemoData={handleLoadDemoData}
         />
 
         {/* Sección 2: Tarjetas de Resumen Superior (KPIs) */}
@@ -577,7 +646,6 @@ export default function App() {
           onMarkAllPrepared={handleMarkAllPrepared}
           onPrintOrder={handlePrintOrder}
           onExportCsv={handleExportCsv}
-          onLoadDemoData={handleLoadDemoData}
         />
 
         {/* Bloque exclusivo para Impresión: Firmas de Responsable de Bodega y Recepción Courier */}

@@ -7,7 +7,6 @@ import {
   Square,
   ArrowUpDown,
   PackageOpen,
-  PlayCircle,
   X,
 } from "lucide-react";
 import {
@@ -37,7 +36,6 @@ interface PickingTableSectionProps {
   onMarkAllPrepared: (prepared: boolean) => void;
   onPrintOrder: () => void;
   onExportCsv: () => void;
-  onLoadDemoData: () => void;
 }
 
 export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
@@ -59,7 +57,6 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
   onMarkAllPrepared,
   onPrintOrder,
   onExportCsv,
-  onLoadDemoData,
 }) => {
   const allFilteredPrepared =
     filteredItems.length > 0 && filteredItems.every((item) => item.preparado);
@@ -236,19 +233,8 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
           </h3>
           <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
             Sube hasta 5 archivos PDF de tus cuentas de Mercado Libre y presiona{" "}
-            <strong>Escanear</strong>, o carga inmediatamente el caso de prueba de{" "}
-            <strong>25 Taladros DeWalt (5 por cuenta)</strong> para explorar la tabla y probar la impresión de bodega.
+            <strong>Escanear</strong> para generar la lista consolidada de picking en tiempo real, o usa el botón <strong>Agregar SKU Manual</strong>.
           </p>
-          <div className="mt-5">
-            <button
-              type="button"
-              onClick={onLoadDemoData}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-500 rounded-lg transition-colors cursor-pointer"
-            >
-              <PlayCircle className="w-4 h-4" />
-              <span>Cargar Datos de Demostración (Ejemplo 25 Taladros)</span>
-            </button>
-          </div>
         </div>
       ) : (
         /* Tabla Interactiva y de Impresión */

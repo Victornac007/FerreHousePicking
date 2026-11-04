@@ -5,23 +5,41 @@ import {
   calculatePickingKPIs,
   filterAndSortPickingItems,
   generatePickingCsvWithBom,
-  getDemoPickingData,
+  PickingItem,
 } from "./pickingLogic";
 
-test("getDemoPickingData includes the 25 DeWalt drills consolidated across 5 accounts (5+5+5+5+5)", () => {
-  const demo = getDemoPickingData();
-  assert.equal(demo.accountNames.length, 5);
-  assert.ok(demo.items.length >= 6);
-
-  const drill = demo.items.find((item) => item.sku === "DW-DCD7781-20V");
-  assert.ok(drill, "DeWalt drill SKU DW-DCD7781-20V must exist in demo data");
-  assert.equal(drill.cta1, 5);
-  assert.equal(drill.cta2, 5);
-  assert.equal(drill.cta3, 5);
-  assert.equal(drill.cta4, 5);
-  assert.equal(drill.cta5, 5);
-  assert.equal(drill.totalPreparar, 25);
-});
+const SAMPLE_ITEMS: PickingItem[] = normalizePickingItems([
+  {
+    id: "test-1",
+    sku: "DW-DCD7781-20V",
+    producto: "Taladro DeWalt 20V",
+    marca: "DeWalt",
+    modelo: "DCD7781",
+    categoria: "Herramientas Eléctricas",
+    cta1: 5,
+    cta2: 5,
+    cta3: 5,
+    cta4: 5,
+    cta5: 5,
+    totalPreparar: 25,
+    preparado: false,
+  },
+  {
+    id: "test-2",
+    sku: "BOS-GWS850-45",
+    producto: "Esmeril Angular Bosch 850W",
+    marca: "Bosch",
+    modelo: "GWS 850",
+    categoria: "Herramientas Eléctricas",
+    cta1: 2,
+    cta2: 3,
+    cta3: 1,
+    cta4: 0,
+    cta5: 4,
+    totalPreparar: 10,
+    preparado: true,
+  },
+]);
 
 test("normalizePickingItems merges duplicate SKUs across rows and computes exact totalPreparar", () => {
   const raw = [
@@ -56,48 +74,47 @@ test("normalizePickingItems merges duplicate SKUs across rows and computes exact
 });
 
 test("calculatePickingKPIs accurately computes total physical units, unique SKUs, and per-account sums", () => {
-  const demo = getDemoPickingData();
-  const kpis = calculatePickingKPIs(demo.items, 5);
+  const kpis = calculatePickingKPIs(SAMPLE_ITEMS, 5);
 
-  assert.equal(kpis.uniqueSkus, 8);
+  assert.equal(kpis.uniqueSkus, 2);
   assert.equal(kpis.accountsActive, 5);
-  assert.equal(kpis.totalUnits, 124);
-  assert.deepEqual(kpis.perAccountTotals, [26, 27, 22, 26, 23]);
-  assert.equal(kpis.completedSkus, 2);
+  assert.equal(kpis.totalUnits, 35);
+  assert.deepEqual(kpis.perAccountTotals, [7, 8, 6, 5, 9]);
+  assert.equal(kpis.completedSkus, 1);
 });
 
 test("filterAndSortPickingItems filters by SKU, brand, product name, and status", () => {
-  const demo = getDemoPickingData();
-
-  const byBrand = filterAndSortPickingItems(demo.items, {
+  const byBrand = filterAndSortPickingItems(SAMPLE_ITEMS, {
     searchQuery: "dewalt",
   });
   assert.equal(byBrand.length, 1);
   assert.equal(byBrand[0].sku, "DW-DCD7781-20V");
 
-  const byPending = filterAndSortPickingItems(demo.items, {
+  const byPending = filterAndSortPickingItems(SAMPLE_ITEMS, {
     searchQuery: "",
     statusFilter: "pending",
   });
-  assert.equal(byPending.length, 6);
+  assert.equal(byPending.length, 1);
+  assert.equal(byPending[0].sku, "DW-DCD7781-20V");
 
-  const byCompleted = filterAndSortPickingItems(demo.items, {
+  const byCompleted = filterAndSortPickingItems(SAMPLE_ITEMS, {
     searchQuery: "",
     statusFilter: "completed",
   });
-  assert.equal(byCompleted.length, 2);
+  assert.equal(byCompleted.length, 1);
+  assert.equal(byCompleted[0].sku, "BOS-GWS850-45");
 });
 
 test("generatePickingCsvWithBom outputs UTF-8 BOM and semicolon-separated rows for Spanish Excel", () => {
-  const demo = getDemoPickingData();
-  const csv = generatePickingCsvWithBom(demo.items, demo.accountNames);
+  const accountNames = ["Cta 1", "Cta 2", "Cta 3", "Cta 4", "Cta 5"];
+  const csv = generatePickingCsvWithBom(SAMPLE_ITEMS, accountNames);
 
   assert.ok(csv.startsWith("\uFEFF"), "CSV must start with UTF-8 BOM");
   const lines = csv.slice(1).split("\r\n");
-  // Header + 8 items + 1 totals row = 10 lines
-  assert.equal(lines.length, 10);
+  // Header + 2 items + 1 totals row = 4 lines
+  assert.equal(lines.length, 4);
   assert.ok(lines[0].includes(";"), "Header must be delimited by semicolons");
   assert.ok(lines[0].includes("TOTAL A PREPARAR"));
   assert.ok(lines[1].includes("DW-DCD7781-20V"));
-  assert.ok(lines[9].startsWith("TOTALES BODEGA;"));
+  assert.ok(lines[3].startsWith("TOTALES BODEGA;"));
 });
