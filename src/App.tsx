@@ -456,16 +456,22 @@ export default function App() {
       {/* Top Bar Mercado Libre Brand: Fondo Amarillo Oficial #ffe600 con texto y acentos azul marino #2d3277 */}
       <header className="no-print sticky top-0 z-30 bg-[#ffe600] border-b border-[#e6ce00] px-4 sm:px-6 py-3 shadow-xs">
         <div className="max-w-[1380px] mx-auto flex items-center justify-between gap-3 sm:gap-8">
-          {/* Zona 1: Brand Title con look Mercado Libre */}
+          {/* Zona 1: Brand Title con look Mercado Libre y logo FerreHouse */}
           <a
             href="#top"
-            className="flex items-center gap-2 text-base sm:text-lg font-extrabold tracking-tight text-[#2d3277] whitespace-nowrap shrink-0 hover:opacity-90 transition-opacity"
+            className="flex items-center gap-2.5 text-base sm:text-lg font-extrabold tracking-tight text-[#2d3277] whitespace-nowrap shrink-0 hover:opacity-90 transition-opacity"
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-[#2d3277] shrink-0" aria-hidden="true" />
-            <span>Picking FerreHouse</span>
-            <span className="hidden sm:inline text-xs font-semibold px-2 py-0.5 rounded bg-[#2d3277]/10 text-[#2d3277]">
-              Mercado Envíos
-            </span>
+            <img
+              src="/assets/aistudio/1793621644265_3_b373221c.jpeg"
+              alt="Logo FerreHouse"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover shadow-2xs border border-[#2d3277]/20"
+            />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+              <span>Picking FerreHouse</span>
+              <span className="hidden sm:inline text-xs font-semibold px-2 py-0.5 rounded bg-[#2d3277]/10 text-[#2d3277]">
+                Mercado Envíos
+              </span>
+            </div>
           </a>
 
           {/* Zona 2: 4 enlaces de navegación limpios en una sola línea */}
@@ -655,9 +661,16 @@ export default function App() {
       {/* Pie de página limpio (Oculto en impresión) */}
       <footer className="no-print border-t border-slate-200 bg-white py-4 px-6 mt-10">
         <div className="max-w-[1380px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
-          <span>
-            FerreHousePicking · Sistema de Consolidación de Pedidos y Despacho para Bodega
-          </span>
+          <div className="flex items-center gap-2">
+            <img
+              src="/assets/aistudio/1793621644265_3_b373221c.jpeg"
+              alt="FerreHouse"
+              className="w-5 h-5 rounded object-cover shadow-2xs"
+            />
+            <span>
+              Picking FerreHouse · Sistema de Consolidación de Pedidos y Despacho para Bodega
+            </span>
+          </div>
           <span>
             Compatible con Impresión A4 Horizontal B/N y Exportación Microsoft Excel (UTF-8 BOM)
           </span>
