@@ -21,6 +21,7 @@ import { AccountUploadSection } from "./components/AccountUploadSection";
 import { KpiSummaryStrip } from "./components/KpiSummaryStrip";
 import { PickingTableSection } from "./components/PickingTableSection";
 import { ManualItemModal } from "./components/ManualItemModal";
+import { ScanProgressModal } from "./components/ScanProgressModal";
 import {
   PrintWorkOrderHeader,
   PrintSignaturesFooter,
@@ -357,7 +358,7 @@ export default function App() {
     );
   };
 
-  const handleMarkAllPrepared = (prepared: boolean) => {
+  const handleMarkAllPrepared = (preparado: boolean) => {
     const visibleIds = new Set(filteredItems.map((i) => i.id));
     setItems((prev) =>
       prev.map((item) =>
@@ -594,6 +595,9 @@ export default function App() {
           </span>
         </div>
       </footer>
+
+      {/* Modal interactivo de progreso de escaneo con Gemini 3.6 Flash */}
+      <ScanProgressModal isProcessing={isProcessing} slots={slots} />
 
       {/* Modal para agregar o sumar un producto manualmente */}
       <ManualItemModal

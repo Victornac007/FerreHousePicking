@@ -19,7 +19,6 @@ export const ManualItemModal: React.FC<ManualItemModalProps> = ({
   const [producto, setProducto] = useState("");
   const [marca, setMarca] = useState("");
   const [modelo, setModelo] = useState("");
-  const [ubicacionSugerida, setUbicacionSugerida] = useState("PAS-A1 · N1");
   const [cta1, setCta1] = useState(0);
   const [cta2, setCta2] = useState(0);
   const [cta3, setCta3] = useState(0);
@@ -56,7 +55,6 @@ export const ManualItemModal: React.FC<ManualItemModalProps> = ({
       marca: marca.trim() || "Genérico",
       modelo: modelo.trim() || "Estándar",
       categoria: "Ferretería Manual",
-      ubicacionSugerida: ubicacionSugerida.trim() || "PAS-A1",
       cta1: Number(cta1) || 0,
       cta2: Number(cta2) || 0,
       cta3: Number(cta3) || 0,
@@ -113,31 +111,17 @@ export const ManualItemModal: React.FC<ManualItemModalProps> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                SKU / Código *
-              </label>
-              <input
-                type="text"
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                placeholder="Ej. DW-DCD7781-20V"
-                className="w-full px-3 py-2 text-xs font-mono-tabular bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:bg-white focus:border-slate-900"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Ubicación en Bodega
-              </label>
-              <input
-                type="text"
-                value={ubicacionSugerida}
-                onChange={(e) => setUbicacionSugerida(e.target.value)}
-                placeholder="Ej. PAS-A1 · N2"
-                className="w-full px-3 py-2 text-xs font-mono-tabular bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:bg-white focus:border-slate-900"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              SKU / Código *
+            </label>
+            <input
+              type="text"
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              placeholder="Ej. DW-DCD7781-20V"
+              className="w-full px-3 py-2 text-xs font-mono-tabular bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:bg-white focus:border-slate-900"
+            />
           </div>
 
           <div>

@@ -45,10 +45,6 @@ const pickingResponseSchema = {
             type: Type.STRING,
             description: "Categoría ferretera.",
           },
-          ubicacionSugerida: {
-            type: Type.STRING,
-            description: "Pasillo/Estante de bodega sugerido.",
-          },
           cta1: { type: Type.INTEGER },
           cta2: { type: Type.INTEGER },
           cta3: { type: Type.INTEGER },
@@ -62,7 +58,6 @@ const pickingResponseSchema = {
           "marca",
           "modelo",
           "categoria",
-          "ubicacionSugerida",
           "cta1",
           "cta2",
           "cta3",

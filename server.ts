@@ -58,10 +58,6 @@ const pickingResponseSchema = {
             type: Type.STRING,
             description: "Categoría ferretera (ej. Herramientas Eléctricas, Accesorios, Fijaciones, Seguridad Industrial, Manuales).",
           },
-          ubicacionSugerida: {
-            type: Type.STRING,
-            description: "Pasillo/Estante de bodega si aparece en el documento o código sugerido (ej. PAS-A1, EST-B4).",
-          },
           cta1: {
             type: Type.INTEGER,
             description: "Cantidad de unidades vendidas en la Cuenta 1 (0 si no hubo ventas en esta cuenta).",
@@ -93,7 +89,6 @@ const pickingResponseSchema = {
           "marca",
           "modelo",
           "categoria",
-          "ubicacionSugerida",
           "cta1",
           "cta2",
           "cta3",

@@ -5,7 +5,6 @@ export interface PickingItem {
   marca: string;
   modelo: string;
   categoria: string;
-  ubicacionSugerida: string;
   cta1: number;
   cta2: number;
   cta3: number;
@@ -35,7 +34,7 @@ export interface PickingKPIs {
 }
 
 export type FilterStatus = "all" | "pending" | "completed";
-export type SortField = "totalPreparar" | "sku" | "producto" | "marca" | "ubicacionSugerida";
+export type SortField = "totalPreparar" | "sku" | "producto" | "marca";
 export type SortDirection = "asc" | "desc";
 
 /**
@@ -81,7 +80,6 @@ export function normalizePickingItems(rawItems: Array<Partial<PickingItem>>): Pi
         marca: (raw.marca || "Genérico").trim(),
         modelo: (raw.modelo || "Estándar").trim(),
         categoria: (raw.categoria || "Ferretería General").trim(),
-        ubicacionSugerida: (raw.ubicacionSugerida || `PAS-A${(i % 6) + 1}`).trim(),
         cta1: c1,
         cta2: c2,
         cta3: c3,
@@ -181,7 +179,6 @@ export function filterAndSortPickingItems(
       item.marca,
       item.modelo,
       item.categoria,
-      item.ubicacionSugerida,
     ]
       .join(" ")
       .toLowerCase();
@@ -230,7 +227,6 @@ export function generatePickingCsvWithBom(
 
   const headers = [
     "Estado Picking",
-    "Ubicación Bodega",
     "SKU / Código",
     "Producto",
     "Marca",
@@ -263,7 +259,6 @@ export function generatePickingCsvWithBom(
 
     const row = [
       item.preparado ? "PREPARADO" : "PENDIENTE",
-      item.ubicacionSugerida,
       item.sku,
       item.producto,
       item.marca,
@@ -282,7 +277,6 @@ export function generatePickingCsvWithBom(
   // Summary row at the bottom for warehouse verification
   const totalsRow = [
     "TOTALES BODEGA",
-    "",
     `${items.length} SKUs`,
     "",
     "",
@@ -334,7 +328,6 @@ export function getDemoPickingData(): {
       marca: "DeWalt",
       modelo: "DCD7781D2-B2",
       categoria: "Herramientas Eléctricas",
-      ubicacionSugerida: "PAS-A1 · N2",
       cta1: 5,
       cta2: 5,
       cta3: 5,
@@ -350,7 +343,6 @@ export function getDemoPickingData(): {
       marca: "Bosch",
       modelo: "GWS 850 Professional",
       categoria: "Herramientas Eléctricas",
-      ubicacionSugerida: "PAS-A2 · N1",
       cta1: 4,
       cta2: 3,
       cta3: 6,
@@ -366,7 +358,6 @@ export function getDemoPickingData(): {
       marca: "Makita",
       modelo: "HR2470",
       categoria: "Herramientas Eléctricas",
-      ubicacionSugerida: "PAS-A3 · N3",
       cta1: 2,
       cta2: 4,
       cta3: 2,
@@ -382,7 +373,6 @@ export function getDemoPickingData(): {
       marca: "Stanley",
       modelo: "STMT74393-840",
       categoria: "Herramientas Manuales",
-      ubicacionSugerida: "PAS-B1 · N2",
       cta1: 3,
       cta2: 2,
       cta3: 1,
@@ -398,7 +388,6 @@ export function getDemoPickingData(): {
       marca: "Milwaukee",
       modelo: "48-89-4630",
       categoria: "Accesorios y Consumibles",
-      ubicacionSugerida: "PAS-C2 · N4",
       cta1: 6,
       cta2: 8,
       cta3: 4,
@@ -414,7 +403,6 @@ export function getDemoPickingData(): {
       marca: "Fluke",
       modelo: "Fluke 117",
       categoria: "Instrumentos de Medición",
-      ubicacionSugerida: "PAS-D1 · N1",
       cta1: 1,
       cta2: 2,
       cta3: 1,
@@ -430,7 +418,6 @@ export function getDemoPickingData(): {
       marca: "Truper",
       modelo: "CAREL-913",
       categoria: "Seguridad Industrial",
-      ubicacionSugerida: "PAS-B4 · N2",
       cta1: 3,
       cta2: 1,
       cta3: 3,
@@ -446,7 +433,6 @@ export function getDemoPickingData(): {
       marca: "Bosch",
       modelo: "GLM 500",
       categoria: "Instrumentos de Medición",
-      ubicacionSugerida: "PAS-D1 · N3",
       cta1: 2,
       cta2: 2,
       cta3: 0,
@@ -459,7 +445,7 @@ export function getDemoPickingData(): {
 
   return {
     resumenOperativo:
-      "Demostración operativa cargada: Se homologaron 5 archivos PDF de Mercado Envíos. El SKU estrella DW-DCD7781-20V (Taladro Percutor DeWalt 20V) registró 5 unidades vendidas en cada una de las 5 cuentas, consolidando 25 unidades totales a retirar en el Pasillo A1.",
+      "Demostración operativa cargada: Se homologaron 5 archivos PDF de Mercado Envíos. El SKU estrella DW-DCD7781-20V (Taladro Percutor DeWalt 20V) registró 5 unidades vendidas en cada una de las 5 cuentas, consolidando 25 unidades totales para despacho.",
     items: normalizePickingItems(rawItems),
     accountNames,
     fileNames,

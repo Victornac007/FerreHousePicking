@@ -9,6 +9,7 @@ import {
   PlayCircle,
   FolderUp,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import { AccountSlot } from "../utils/pickingLogic";
 
@@ -404,10 +405,12 @@ export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
           disabled={isProcessing || uploadedCount === 0}
           className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#3483fa] hover:bg-[#2968c8] active:bg-[#1f5099] disabled:bg-slate-300 disabled:text-slate-500 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs"
         >
-          <Sparkles className="w-4 h-4 text-[#ffe600] shrink-0" />
-          <span>
-            {isProcessing ? "Escaneando PDFs..." : "Escanear"}
-          </span>
+          {isProcessing ? (
+            <Loader2 className="w-4 h-4 text-[#ffe600] animate-spin shrink-0" />
+          ) : (
+            <Sparkles className="w-4 h-4 text-[#ffe600] shrink-0" />
+          )}
+          <span>{isProcessing ? "Escaneando PDFs..." : "Escanear"}</span>
         </button>
       </div>
     </section>

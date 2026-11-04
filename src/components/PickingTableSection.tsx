@@ -263,7 +263,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                     onClick={() => onToggleSort("sku")}
                     className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold"
                   >
-                    <span>SKU / Ubicación</span>
+                    <span>SKU / Código</span>
                     <ArrowUpDown className="w-3 h-3 no-print" />
                   </button>
                 </th>
@@ -352,7 +352,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         />
                       </td>
 
-                      {/* Columna 2: SKU y Ubicación de Bodega */}
+                      {/* Columna 2: SKU / Código */}
                       <td className="py-3 px-3 align-middle whitespace-nowrap">
                         <div
                           className={`font-mono-tabular font-bold text-xs ${
@@ -362,9 +362,6 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                           }`}
                         >
                           {item.sku}
-                        </div>
-                        <div className="text-[11px] text-slate-500 font-mono-tabular mt-0.5">
-                          {item.ubicacionSugerida}
                         </div>
                       </td>
 
