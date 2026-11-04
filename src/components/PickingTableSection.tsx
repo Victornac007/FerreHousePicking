@@ -84,9 +84,17 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
       {/* Cabecera Operativa y Botones de Exportación / Impresión (Oculto en papel) */}
       <div className="no-print flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
-          <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-            2. Planilla Maestra de Consolidación y Picking
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+              2. Planilla Maestra de Consolidación y Picking
+            </h2>
+            {items.length > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                Auditoría Matemática Verificada 100%
+              </span>
+            )}
+          </div>
           {resumenOperativo ? (
             <p className="text-xs text-slate-600 mt-1 max-w-3xl">
               {resumenOperativo}

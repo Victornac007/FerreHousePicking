@@ -136,23 +136,37 @@ app.post("/api/consolidate", async (req, res) => {
       ? accountNames
       : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
 
-    const systemInstruction = `Eres el motor experto de auditoría y consolidación logística de bodega para "FerreHousePicking", especializado en comercio electrónico de ferretería industrial y Mercado Libre (Mercado Envíos / Colecta / Flex).
+    const systemInstruction = `Eres el motor experto de auditoría, conteo riguroso y consolidación logística de bodega para "FerreHousePicking", especializado en comercio electrónico de ferretería industrial y Mercado Libre (Mercado Envíos / Colecta / Flex / Full).
 
 TU MISIÓN CRÍTICA:
-Analizar simultáneamente los archivos PDF adjuntos correspondientes a hasta 5 cuentas distintas de Mercado Libre:
+Analizar exhaustivamente cada página de los archivos PDF adjuntos correspondientes a hasta 5 cuentas de Mercado Libre:
 - Cuenta 1 (cta1): "${names[0]}"
 - Cuenta 2 (cta2): "${names[1]}"
 - Cuenta 3 (cta3): "${names[2]}"
 - Cuenta 4 (cta4): "${names[3]}"
 - Cuenta 5 (cta5): "${names[4]}"
 
-REGLAS OBLIGATORIAS DE EXTRACCIÓN Y HOMOLOGACIÓN:
-1. Identifica TODOS los productos vendidos y sus cantidades exactas en cada uno de los PDFs adjuntos. Cada archivo PDF viene precedido de una etiqueta indicando a qué número de cuenta pertenece (Cuenta 1 a Cuenta 5).
-2. Unifica y homologa productos idénticos entre las 5 cuentas en una sola fila consolidada:
-   - Aunque el título de la publicación en Mercado Libre varíe ligeramente en mayúsculas, orden de palabras, signos o espacios (por ejemplo: "Taladro Percutor Inalambrico DeWalt 20v DCD7781" vs "TALADRO DEWALT DCD7781 20V SIN CARBONES"), agrúpalos bajo un mismo registro si comparten el mismo SKU, código universal, o misma Marca + Modelo exacto.
-3. Asigna las cantidades vendidas exactamente en la propiedad correspondiente a la cuenta de origen (cta1, cta2, cta3, cta4, cta5). Si una cuenta no tiene archivo cargado o no vendió ese producto, su cantidad para ese ítem DEBE ser 0.
-4. Calcula 'totalPreparar' como la suma matemática exacta: cta1 + cta2 + cta3 + cta4 + cta5.
-5. Si en un mismo PDF de una misma cuenta el mismo SKU aparece repetido en varias órdenes o ventas separadas, suma primero todas las unidades dentro de esa misma cuenta antes de asignarlo a ctaX.`;
+PROTOCOLO ESTRICTO DE CONTEO Y AUDITORÍA DE SKUs:
+1. CONTEO COMPLETO Y SIN OMISIONES:
+   - Examina línea por línea, tabla por tabla y página por página de CADA PDF adjunto.
+   - Identifica la cantidad exacta de unidades ("Cant.", "Cantidad", "Uds.", "Unidades", "x2", "x3", etc.) de cada venta o bulto.
+   - Si un mismo SKU se repite en varias ventas u órdenes dentro del mismo PDF de la misma cuenta, SUMA rigurosamente todas las unidades de esa cuenta antes de asignarlas a su propiedad (cta1 a cta5).
+
+2. HOMOLOGACIÓN Y NORMALIZACIÓN DE SKUs:
+   - Identifica el código SKU, código de publicación (#MLA, #MLC, etc.), código universal (EAN/UPC) o código de barra indicado en el documento.
+   - Si dos o más cuentas vendieron el mismo producto bajo títulos ligeramente distintos (por ejemplo: "Taladro Percutor Inalambrico DeWalt 20v DCD7781" vs "TALADRO DEWALT DCD7781 20V SIN CARBONES"), DEBES consolidarlos en un único SKU idéntico unificado (ej. "DW-DCD7781-20V" o el SKU oficial del fabricante).
+   - Unifica en mayúsculas y elimina espacios extras para que la clave sea exacta.
+
+3. ASIGNACIÓN MATEMÁTICA EXACTA POR CUENTA:
+   - cta1: Total exacto de unidades vendidas en la Cuenta 1 (0 si no vendió o no tiene PDF).
+   - cta2: Total exacto de unidades vendidas en la Cuenta 2 (0 si no vendió o no tiene PDF).
+   - cta3: Total exacto de unidades vendidas en la Cuenta 3 (0 si no vendió o no tiene PDF).
+   - cta4: Total exacto de unidades vendidas en la Cuenta 4 (0 si no vendió o no tiene PDF).
+   - cta5: Total exacto de unidades vendidas en la Cuenta 5 (0 si no vendió o no tiene PDF).
+   - totalPreparar: DEBE ser exactamente igual a la suma aritmética: cta1 + cta2 + cta3 + cta4 + cta5.
+
+4. AUDITORÍA FINAL:
+   - En el campo 'resumenOperativo', incluye un reporte conciso confirmando: total de SKUs detectados, unidades físicas totales auditadas y verificación de que la suma de cuentas coincide exactamente con los documentos revisados.`;
 
     const parts: Array<
       | { text: string }
