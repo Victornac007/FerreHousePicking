@@ -82,7 +82,7 @@ export const ScanProgressModal: React.FC<ScanProgressModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-extrabold text-[#2d3277] tracking-tight">
-                Escaneando con Gemini 3.6 Flash
+                Escaneando con SI360°
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 Consolidando {activeSlots.length} archivo(s) PDF de Mercado Libre

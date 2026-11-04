@@ -15,36 +15,36 @@ export const PrintWorkOrderHeader: React.FC<PrintSheetBlocksProps> = ({
   formattedDate,
 }) => {
   return (
-    <div className="hidden print-only mb-4 pb-3 border-b-2 border-black text-black">
+    <div className="hidden print-only mb-2 pb-2 border-b-2 border-black text-black">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-extrabold uppercase tracking-tight">
+          <h1 className="text-base font-black uppercase tracking-tight">
             FERREHOUSE PICKING — ORDEN MAESTRA DE PREPARACIÓN DE BODEGA
           </h1>
-          <p className="text-xs mt-0.5">
+          <p className="text-[10px] mt-0.5 font-medium">
             Consolidado Multi-Cuenta Mercado Envíos / Colecta / Courier
           </p>
         </div>
-        <div className="text-right font-mono-tabular text-xs">
-          <div className="font-bold">ORDEN N°: {orderNumber}</div>
+        <div className="text-right font-mono-tabular text-[10px]">
+          <div className="font-bold text-[#000]">ORDEN N°: {orderNumber}</div>
           <div>FECHA / HORA: {formattedDate}</div>
         </div>
       </div>
 
-      <div className="mt-3 pt-2 border-t border-black flex items-center justify-between text-xs font-mono-tabular">
+      <div className="mt-2 pt-1.5 border-t border-black flex items-center justify-between text-[10px] font-mono-tabular">
         <div>
-          <strong>UNIDADES FÍSICAS TOTALES:</strong> {kpis.totalUnits} uds.
+          <strong>UNIDADES TOTALES:</strong> {kpis.totalUnits} uds.
         </div>
         <div>
-          <strong>SKUs ÚNICOS A RETIRAR:</strong> {kpis.uniqueSkus} ítems
+          <strong>SKUs ÚNICOS:</strong> {kpis.uniqueSkus} ítems
         </div>
         <div>
-          <strong>CUENTAS CONSOLIDADAS:</strong> {kpis.accountsActive} / 5
+          <strong>CUENTAS:</strong> {kpis.accountsActive} / 5
         </div>
         <div>
-          <strong>DESGLOSE POR CUENTA:</strong>{" "}
+          <strong>DESGLOSE:</strong>{" "}
           {accountNames
-            .map((name, i) => `C${i + 1} (${name.slice(0, 12)}): ${kpis.perAccountTotals[i]}`)
+            .map((name, i) => `C${i + 1}: ${kpis.perAccountTotals[i]}`)
             .join(" | ")}
         </div>
       </div>
@@ -54,36 +54,37 @@ export const PrintWorkOrderHeader: React.FC<PrintSheetBlocksProps> = ({
 
 export const PrintSignaturesFooter: React.FC = () => {
   return (
-    <div className="hidden print-only mt-10 pt-6 text-black">
-      <div className="grid grid-cols-3 gap-8 text-xs">
-        <div className="pt-8 border-t-[1.5pt] border-black text-center">
-          <p className="font-bold uppercase">Firma Responsable de Bodega</p>
-          <p className="text-[10px] mt-1">
-            Nombre, RUT y Hora de Término de Picking
+    <div className="hidden print-only mt-4 pt-3 border-t border-black text-black break-inside-avoid">
+      <div className="grid grid-cols-3 gap-6 text-[10px]">
+        <div className="pt-5 border-t border-black text-center">
+          <p className="font-bold uppercase">Firma Responsable Bodega</p>
+          <p className="text-[9px] mt-0.5">
+            Nombre, RUT y Hora Término
           </p>
         </div>
 
-        <div className="pt-8 border-t-[1.5pt] border-black text-center">
-          <p className="font-bold uppercase">Control de Calidad / Embalaje</p>
-          <p className="text-[10px] mt-1">
-            Verificación de Etiquetas por Cuenta (Cta 1 a Cta 5)
+        <div className="pt-5 border-t border-black text-center">
+          <p className="font-bold uppercase">Control Calidad / Embalaje</p>
+          <p className="text-[9px] mt-0.5">
+            Verificación Etiquetas C1 - C5
           </p>
         </div>
 
-        <div className="pt-8 border-t-[1.5pt] border-black text-center">
-          <p className="font-bold uppercase">Firma Recepción Courier / Colecta</p>
-          <p className="text-[10px] mt-1">
-            Transporte Mercado Envíos · Patente y Bultos Recibidos
+        <div className="pt-5 border-t border-black text-center">
+          <p className="font-bold uppercase">Firma Recepción Courier</p>
+          <p className="text-[9px] mt-0.5">
+            Mercado Envíos · Patente y Bultos
           </p>
         </div>
       </div>
 
-      <div className="mt-6 text-[9.5pt] flex items-center justify-between border-t border-black pt-2 font-mono-tabular">
+      <div className="mt-3 text-[9px] flex items-center justify-between border-t border-slate-400 pt-1 font-mono-tabular">
         <span>
-          Instrucción de Bodega: Marque con lápiz cada casilla [ ] tras verificar SKU, modelo y cantidad física total.
+          Instrucción: Marque [ ] tras verificar SKU, modelo y cantidad física.
         </span>
-        <span>FerreHousePicking — Documento de Control Interno</span>
+        <span>FerreHousePicking — Control Interno</span>
       </div>
     </div>
   );
 };
+
