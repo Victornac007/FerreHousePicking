@@ -16,10 +16,12 @@ export interface DeterministicConsolidationResult {
   extractedCount: number;
 }
 
-function cleanSku(val: string): string {
-  let s = val.trim().toUpperCase();
-  s = s.replace(/^(SKU|CÓDIGO|CODIGO|COD|REF|ARTÍCULO|ART)[\s:.\-#]+/i, "");
-  s = s.replace(/\s+/g, "-");
+export function cleanSku(val: string): string {
+  let s = val.trim();
+  // Strip leading prefixes like "SKU:", "SKU -", "COD:", "CODIGO:", "REF:"
+  s = s.replace(/^(SKU|CÓDIGO|CODIGO|COD|REF|ARTÍCULO|ART)[\s:.\-#]+/i, "").trim();
+  // Strip trailing punctuation like semicolons, pipes, commas
+  s = s.replace(/^[|·\-\s]+|[|·\-\s]+$/g, "").trim();
   return s;
 }
 
@@ -61,14 +63,14 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
     const line = lines[i];
 
     // Pattern 1: Inline SKU & Cantidad (e.g., "SKU: TAL-DCD7781 | Cant: 2 | Taladro DeWalt" or "Cant: 2 | SKU: ...")
-    const inlineSkuMatch = line.match(/(?:SKU|CÓDIGO|CODIGO|COD)[\s:.\-#]+([A-Z0-9_\-\.\/]{3,35})/i);
+    const inlineSkuMatch = line.match(/(?:SKU|CÓDIGO|CODIGO|COD)[\s:.\-#]+([A-Za-z0-9_\-\.\/]{2,45})/i);
     const inlineQtyMatch = line.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]+)/i);
 
     if (inlineSkuMatch && inlineQtyMatch) {
       const sku = cleanSku(inlineSkuMatch[1]);
       const qty = parseInt(inlineQtyMatch[1], 10);
       let prodName = line
-        .replace(/(?:SKU|CÓDIGO|CODIGO|COD)[\s:.\-#]+[A-Z0-9_\-\.\/]{3,35}/i, "")
+        .replace(/(?:SKU|CÓDIGO|CODIGO|COD)[\s:.\-#]+[A-Za-z0-9_\-\.\/]{2,45}/i, "")
         .replace(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*[0-9]+/i, "")
         .replace(/^[|·\-\s]+|[|·\-\s]+$/g, "");
       prodName = cleanProductName(prodName) || sku;
@@ -78,21 +80,56 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
       }
     }
 
-    // Pattern 2: Tabular line with optional leading row number e.g.:
+    // Pattern 2: Multi-line Mercado Libre Label / Picking List:
+    // Line i: "SKU: TAL-DCD7781" (or "SKU: 123456")
+    // Line i+1 or i-1: Product Name
+    // Quantity line or nearby Cantidad
+    if (inlineSkuMatch && !inlineQtyMatch) {
+      const sku = cleanSku(inlineSkuMatch[1]);
+      let qty = 1;
+      let prodName = "";
+
+      // Check window of surrounding lines (previous and next 2 lines)
+      for (let offset = -2; offset <= 2; offset++) {
+        if (offset === 0) continue;
+        const targetIdx = i + offset;
+        if (targetIdx >= 0 && targetIdx < lines.length) {
+          const targetLine = lines[targetIdx];
+          const qtyMatch = targetLine.match(/^(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)?[\s:.\-#]*([0-9]+)$/i) ||
+                           targetLine.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]+)/i);
+          if (qtyMatch && !qtyMatch[0].includes("ORDEN") && !qtyMatch[0].includes("FECHA")) {
+            qty = parseInt(qtyMatch[1], 10);
+          } else if (!prodName && targetLine.length > 4 && !targetLine.includes("SKU") && !/^(PÁGINA|PAGINA|FECHA|ORDEN|GUÍA|RECEPTOR|ENVÍO)/i.test(targetLine)) {
+            prodName = cleanProductName(targetLine);
+          }
+        }
+      }
+
+      if (sku && !sku.startsWith("PAGINA") && !sku.startsWith("TOTAL")) {
+        results.push({
+          sku,
+          producto: prodName || sku,
+          cantidad: qty,
+        });
+        continue;
+      }
+    }
+
+    // Pattern 3: Tabular line with optional leading row number e.g.:
     // "1  DW-DCD7781-20V    Taladro Percutor 20V    3" or "DW-DCD7781-20V    Taladro    3"
-    const tableMatch = line.match(/^(?:[0-9]{1,3}\s+)?([A-Z0-9_\-\.\/]{3,30})\s{2,}(.+?)\s{2,}([0-9]+)$/i);
+    const tableMatch = line.match(/^(?:[0-9]{1,3}\s+)?([A-Za-z0-9_\-\.\/]{3,35})\s{2,}(.+?)\s{2,}([0-9]+)$/i);
     if (tableMatch) {
       const sku = cleanSku(tableMatch[1]);
       const prodName = cleanProductName(tableMatch[2]);
       const qty = parseInt(tableMatch[3], 10);
-      if (qty > 0 && !sku.startsWith("PAGINA") && !sku.startsWith("TOTAL") && !sku.startsWith("FECHA")) {
+      if (qty > 0 && !sku.startsWith("PAGINA") && !sku.startsWith("TOTAL") && !sku.startsWith("FECHA") && !sku.startsWith("ORDEN")) {
         results.push({ sku, producto: prodName, cantidad: qty });
         continue;
       }
     }
 
-    // Pattern 3: Prefix quantity "2 u. TAL-DCD7781 Taladro" or "3 unidades - SKU123"
-    const prefixQtyMatch = line.match(/^([0-9]+)\s*(?:u\.|un\.|uds\.|unidades|unid\.)\s*(?:[-–:]\s*)?([A-Z0-9_\-\.\/]{3,30})?\s*(.*)$/i);
+    // Pattern 4: Prefix quantity "2 u. TAL-DCD7781 Taladro" or "3 unidades - SKU123"
+    const prefixQtyMatch = line.match(/^([0-9]+)\s*(?:u\.|un\.|uds\.|unidades|unid\.)\s*(?:[-–:]\s*)?([A-Za-z0-9_\-\.\/]{3,35})?\s*(.*)$/i);
     if (prefixQtyMatch) {
       const qty = parseInt(prefixQtyMatch[1], 10);
       const possibleSku = prefixQtyMatch[2] ? cleanSku(prefixQtyMatch[2]) : null;
@@ -102,20 +139,6 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
       if (qty > 0) {
         results.push({ sku: finalSku, producto: finalProd, cantidad: qty });
         continue;
-      }
-    }
-
-    // Pattern 4: SKU line followed by Quantity line or vice-versa
-    if (inlineSkuMatch && i + 1 < lines.length) {
-      const nextLine = lines[i + 1];
-      const nextQtyMatch = nextLine.match(/^(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)?[\s:.\-#]*([0-9]+)$/i);
-      if (nextQtyMatch) {
-        const sku = cleanSku(inlineSkuMatch[1]);
-        const qty = parseInt(nextQtyMatch[1], 10);
-        if (qty > 0) {
-          results.push({ sku, producto: sku, cantidad: qty });
-          continue;
-        }
       }
     }
   }
@@ -155,9 +178,9 @@ export async function consolidatePdfsDeterministically(
     const cleanBase64 = file.base64Data.includes(",")
       ? file.base64Data.split(",")[1]
       : file.base64Data;
+    const buffer = Buffer.from(cleanBase64, "base64");
     let text = "";
     try {
-      // @ts-expect-error - pdf-parse v2 constructor
       const parser = new PDFParse({ data: buffer });
       const doc = await parser.getText();
       text = typeof doc === "string" ? doc : doc?.text || "";

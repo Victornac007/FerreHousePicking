@@ -46,9 +46,7 @@ export function normalizePickingItems(rawItems: Array<Partial<PickingItem>>): Pi
 
   for (let i = 0; i < rawItems.length; i++) {
     const raw = rawItems[i];
-    const cleanSku = (raw.sku || `SKU-${String(i + 1).padStart(3, "0")}`)
-      .trim()
-      .toUpperCase();
+    const cleanSku = (raw.sku || `SKU-${String(i + 1).padStart(3, "0")}`).trim().toUpperCase();
 
     const c1 = Math.max(0, Math.round(Number(raw.cta1) || 0));
     const c2 = Math.max(0, Math.round(Number(raw.cta2) || 0));
