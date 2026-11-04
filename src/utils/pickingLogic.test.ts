@@ -118,3 +118,39 @@ test("generatePickingCsvWithBom outputs UTF-8 BOM and semicolon-separated rows f
   assert.ok(lines[1].includes("DW-DCD7781-20V"));
   assert.ok(lines[3].startsWith("TOTALES BODEGA;"));
 });
+
+test("extractProductsFromText extracts exact SKUs and quantities from Mercado Libre patterns", async () => {
+  const { extractProductsFromText } = await import("./deterministicConsolidator");
+
+  const sampleMLReport = `
+ORDEN DE PREPARACIÓN DE ENVÍO MERCADO ENVÍOS
+FECHA: 2026-11-04
+1  DW-DCD7781-20V    Taladro Percutor Inalámbrico DeWalt 20V    3
+2  BOS-GWS850-45     Esmeril Angular Bosch 850W 4.5 pulg        5
+SKU: MAK-HR2470 | Cantidad: 2 | Rotomartillo SDS Plus Makita
+Cant: 4 | SKU: STA-STHT7088 | Juego Destornilladores Stanley
+3 u. Truper Martillo Galponero 16oz
+`;
+
+  const extracted = extractProductsFromText(sampleMLReport);
+  assert.equal(extracted.length, 5);
+
+  const dewalt = extracted.find((i) => i.sku === "DW-DCD7781-20V");
+  assert.ok(dewalt);
+  assert.equal(dewalt.cantidad, 3);
+
+  const bosch = extracted.find((i) => i.sku === "BOS-GWS850-45");
+  assert.ok(bosch);
+  assert.equal(bosch.cantidad, 5);
+
+  const makita = extracted.find((i) => i.sku === "MAK-HR2470");
+  assert.ok(makita);
+  assert.equal(makita.cantidad, 2);
+
+  const stanley = extracted.find((i) => i.sku === "STA-STHT7088");
+  assert.ok(stanley);
+  assert.equal(stanley.cantidad, 4);
+
+  const truper = extracted.find((i) => i.cantidad === 3);
+  assert.ok(truper);
+});

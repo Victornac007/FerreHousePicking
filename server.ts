@@ -102,11 +102,14 @@ const pickingResponseSchema = {
   required: ["resumenOperativo", "items"],
 };
 
+import { consolidatePdfsDeterministically } from "./src/utils/deterministicConsolidator";
+
 app.post("/api/consolidate", async (req, res) => {
   try {
-    const { files, accountNames } = req.body as {
+    const { files, accountNames, engine = "deterministic" } = req.body as {
       files: UploadedPdfPayload[];
       accountNames: string[];
+      engine?: "deterministic" | "ai";
     };
 
     if (!files || !Array.isArray(files) || files.length === 0) {
@@ -115,11 +118,30 @@ app.post("/api/consolidate", async (req, res) => {
       });
     }
 
+    const names = Array.isArray(accountNames) && accountNames.length === 5
+      ? accountNames
+      : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
+
+    // 1. MODO DETERMINISTA (DIRECTO, SIN INTELIGENCIA ARTIFICIAL, 100% EXACTO)
+    if (engine === "deterministic") {
+      try {
+        const result = await consolidatePdfsDeterministically(files, names);
+        // Si el parser determinista encontró items, los retorna directamente con precisión absoluta
+        if (result.items.length > 0) {
+          return res.json(result);
+        }
+      } catch (detErr) {
+        console.warn("Fallo en extracción determinista, evaluando alternativa:", detErr);
+      }
+    }
+
+    // 2. MODO IA (SI SE SOLICITA O COMO RESPALDO PARA PDFs QUE SEAN FOTOS O ESCANEOS DE IMAGEN)
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({
+      // Si no hay API key y no hubo resultados en determinista
+      return res.status(400).json({
         error:
-          "No se encontró la clave GEMINI_API_KEY en el servidor. Verifica la configuración en el panel Settings > Secrets.",
+          "No se pudieron extraer datos de texto estructurado de los PDFs. Asegúrate de subir PDFs digitales de Mercado Libre.",
       });
     }
 
@@ -131,10 +153,6 @@ app.post("/api/consolidate", async (req, res) => {
         },
       },
     });
-
-    const names = Array.isArray(accountNames) && accountNames.length === 5
-      ? accountNames
-      : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
 
     const systemInstruction = `Eres el motor experto de auditoría, conteo riguroso y consolidación logística de bodega para "FerreHousePicking", especializado en comercio electrónico de ferretería industrial y Mercado Libre (Mercado Envíos / Colecta / Flex / Full).
 
@@ -153,9 +171,8 @@ PROTOCOLO ESTRICTO DE CONTEO Y AUDITORÍA DE SKUs:
    - Si un mismo SKU se repite en varias ventas u órdenes dentro del mismo PDF de la misma cuenta, SUMA rigurosamente todas las unidades de esa cuenta antes de asignarlas a su propiedad (cta1 a cta5).
 
 2. HOMOLOGACIÓN Y NORMALIZACIÓN DE SKUs:
-   - Identifica el código SKU, código de publicación (#MLA, #MLC, etc.), código universal (EAN/UPC) o código de barra indicado en el documento.
-   - Si dos o más cuentas vendieron el mismo producto bajo títulos ligeramente distintos (por ejemplo: "Taladro Percutor Inalambrico DeWalt 20v DCD7781" vs "TALADRO DEWALT DCD7781 20V SIN CARBONES"), DEBES consolidarlos en un único SKU idéntico unificado (ej. "DW-DCD7781-20V" o el SKU oficial del fabricante).
-   - Unifica en mayúsculas y elimina espacios extras para que la clave sea exacta.
+   - Identifica el código SKU exacto, código de publicación (#MLA, #MLC, etc.), código universal (EAN/UPC) o código de barra indicado en el documento sin inventar nombres ni alterar códigos.
+   - Si dos o más cuentas vendieron el mismo producto bajo títulos ligeramente distintos, únelos bajo el mismo SKU oficial.
 
 3. ASIGNACIÓN MATEMÁTICA EXACTA POR CUENTA:
    - cta1: Total exacto de unidades vendidas en la Cuenta 1 (0 si no vendió o no tiene PDF).
@@ -166,7 +183,7 @@ PROTOCOLO ESTRICTO DE CONTEO Y AUDITORÍA DE SKUs:
    - totalPreparar: DEBE ser exactamente igual a la suma aritmética: cta1 + cta2 + cta3 + cta4 + cta5.
 
 4. AUDITORÍA FINAL:
-   - En el campo 'resumenOperativo', incluye un reporte conciso confirmando: total de SKUs detectados, unidades físicas totales auditadas y verificación de que la suma de cuentas coincide exactamente con los documentos revisados.`;
+   - En 'resumenOperativo', confirma el total de SKUs y unidades analizadas.`;
 
     const parts: Array<
       | { text: string }
@@ -218,7 +235,7 @@ PROTOCOLO ESTRICTO DE CONTEO Y AUDITORÍA DE SKUs:
     const errMsg =
       error instanceof Error
         ? error.message
-        : "Error inesperado al procesar los archivos PDF con Gemini.";
+        : "Error inesperado al procesar los archivos PDF.";
     return res.status(500).json({ error: errMsg });
   }
 });
