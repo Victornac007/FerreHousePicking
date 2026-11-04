@@ -672,7 +672,7 @@ export default function App() {
             </span>
           </div>
           <span>
-            Compatible con Impresión A4 Horizontal B/N y Exportación Microsoft Excel (UTF-8 BOM)
+            Compatible con Impresión A4 Vertical (Portrait) B/N y Exportación Microsoft Excel (UTF-8 BOM)
           </span>
         </div>
       </footer>

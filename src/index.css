@@ -25,19 +25,19 @@
 }
 
 /* ==========================================================================
-   ESTILOS DE IMPRESIÓN COMPACTA DE ALTO RENDIMIENTO PARA BODEGA (@media print)
+   ESTILOS DE IMPRESIÓN COMPACTA VERTICAL A4 PARA BODEGA (@media print)
    ========================================================================== */
 @media print {
   @page {
-    size: A4 landscape;
-    margin: 5mm 7mm;
+    size: A4 portrait;
+    margin: 6mm 6mm 6mm 6mm;
   }
 
   html,
   body {
     background: #ffffff !important;
     color: #000000 !important;
-    font-size: 8.5pt !important;
+    font-size: 8pt !important;
     line-height: 1.15 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -76,39 +76,42 @@
   table.print-table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 8pt !important;
+    table-layout: fixed !important;
+    font-size: 7.5pt !important;
     line-height: 1.15 !important;
   }
 
   table.print-table th,
   table.print-table td {
     border: 0.75pt solid #000000 !important;
-    padding: 2.5pt 4pt !important;
+    padding: 2.5pt 3pt !important;
     color: #000000 !important;
     background: #ffffff !important;
+    word-break: break-word !important;
   }
 
   table.print-table thead th {
     background: #e2e8f0 !important;
     font-weight: 800 !important;
     text-transform: uppercase !important;
-    font-size: 7.5pt !important;
-    padding: 3pt 4pt !important;
+    font-size: 7pt !important;
+    padding: 2.5pt 3pt !important;
   }
 
   table.print-table td.print-total-col,
   table.print-table th.print-total-col {
     background: #f1f5f9 !important;
-    font-weight: 800 !important;
-    font-size: 9.5pt !important;
+    font-weight: 900 !important;
+    font-size: 9pt !important;
     border-left: 1.5pt solid #000000 !important;
+    color: #000000 !important;
   }
 
   /* Casilla física cuadrada de alto contraste para marcar con lápiz en bodega */
   .print-checkbox-box {
     display: inline-block !important;
-    width: 10pt !important;
-    height: 10pt !important;
+    width: 9pt !important;
+    height: 9pt !important;
     border: 1pt solid #000000 !important;
     background: #ffffff !important;
     vertical-align: middle !important;
@@ -122,5 +125,13 @@
   tr {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
   }
 }

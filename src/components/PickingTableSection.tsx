@@ -242,18 +242,18 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
           <table className="w-full text-left border-collapse print-table">
             <thead>
               <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                <th className="py-3 px-3 text-center w-14">Check</th>
-                <th className="py-3 px-3">
+                <th className="py-3 px-3 text-center w-12 sm:w-14 print:w-[28px] print:px-1">Check</th>
+                <th className="py-3 px-3 print:w-[68px] print:px-1.5">
                   <button
                     type="button"
                     onClick={() => onToggleSort("sku")}
                     className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold"
                   >
-                    <span>SKU / Código</span>
+                    <span>SKU</span>
                     <ArrowUpDown className="w-3 h-3 no-print" />
                   </button>
                 </th>
-                <th className="py-3 px-3 min-w-[250px]">
+                <th className="py-3 px-3 min-w-[200px] print:w-auto print:px-1.5">
                   <button
                     type="button"
                     onClick={() => onToggleSort("producto")}
@@ -266,24 +266,25 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                 {accountNames.map((name, idx) => (
                   <th
                     key={idx}
-                    className="py-3 px-2.5 text-right font-mono-tabular min-w-[78px]"
+                    className="py-3 px-2.5 text-right font-mono-tabular min-w-[65px] print:w-[36px] print:px-1"
                     title={name}
                   >
-                    <div className="truncate max-w-[105px] ml-auto">
+                    <div className="truncate max-w-[105px] ml-auto print:max-w-none">
                       Cta {idx + 1}
                     </div>
-                    <div className="text-[10px] font-normal text-slate-500 truncate max-w-[105px] ml-auto normal-case">
+                    <div className="no-print text-[10px] font-normal text-slate-500 truncate max-w-[105px] ml-auto normal-case">
                       {name}
                     </div>
                   </th>
                 ))}
-                <th className="py-3 px-4 text-right bg-[#fff9cc] border-l-2 border-[#ffe600] text-[#2d3277] print-total-col min-w-[125px]">
+                <th className="py-3 px-4 text-right bg-[#fff9cc] border-l-2 border-[#ffe600] text-[#2d3277] print-total-col min-w-[125px] print:w-[58px] print:px-1.5">
                   <button
                     type="button"
                     onClick={() => onToggleSort("totalPreparar")}
                     className="inline-flex items-center justify-end gap-1 w-full hover:text-[#1f2358] cursor-pointer uppercase font-extrabold"
                   >
-                    <span>TOTAL A PREPARAR</span>
+                    <span className="no-print">TOTAL A PREPARAR</span>
+                    <span className="hidden print:inline text-[7.5pt] font-black">TOTAL</span>
                     <ArrowUpDown className="w-3.5 h-3.5 no-print" />
                   </button>
                 </th>
@@ -314,7 +315,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                     >
                       {/* Columna 1: Checkbox interactivo en pantalla + Casilla física en impresión */}
                       <td
-                        className="py-3 px-3 text-center align-middle"
+                        className="py-3 px-3 print:py-1 print:px-1 text-center align-middle"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
@@ -339,9 +340,9 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                       </td>
 
                       {/* Columna 2: SKU / Código */}
-                      <td className="py-3 px-3 align-middle whitespace-nowrap">
+                      <td className="py-3 px-3 print:py-1 print:px-1.5 align-middle">
                         <div
-                          className={`font-mono-tabular font-bold text-xs ${
+                          className={`font-mono-tabular font-bold text-xs print:text-[7pt] print:leading-tight break-all ${
                             item.preparado
                               ? "line-through text-slate-500"
                               : "text-slate-900"
@@ -351,10 +352,10 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         </div>
                       </td>
 
-                      {/* Columna 3: Producto, Marca y Modelo (Zero-Pill: metadatos limpios con separador ·) */}
-                      <td className="py-3 px-3 align-middle">
+                      {/* Columna 3: Producto, Marca y Modelo */}
+                      <td className="py-3 px-3 print:py-1 print:px-1.5 align-middle">
                         <div
-                          className={`font-semibold text-sm leading-snug ${
+                          className={`font-semibold text-sm print:text-[7.5pt] print:leading-snug ${
                             item.preparado
                               ? "line-through text-slate-500"
                               : "text-slate-900"
@@ -362,7 +363,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         >
                           {item.producto}
                         </div>
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs print:text-[6.5pt] text-slate-500 mt-0.5 print:mt-0 print:leading-none">
                           <span className="font-semibold text-slate-700">
                             {item.marca}
                           </span>
@@ -378,10 +379,10 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         (qty, idx) => (
                           <td
                             key={idx}
-                            className={`py-3 px-2.5 text-right align-middle font-mono-tabular text-sm ${
+                            className={`py-3 px-2.5 print:py-1 print:px-1 text-right align-middle font-mono-tabular text-sm print:text-[7.5pt] ${
                               qty > 0
                                 ? "font-bold text-slate-900"
-                                : "text-slate-400"
+                                : "text-slate-400 print:text-slate-300"
                             }`}
                           >
                             {qty}
@@ -392,7 +393,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                       {/* Columna 9: TOTAL A PREPARAR destacado con Mercado Libre Yellow */}
                       <td
                         data-testid={`row-total-${item.sku}`}
-                        className="py-3 px-4 text-right align-middle font-mono-tabular text-base font-extrabold bg-[#fff9cc] border-l-2 border-[#ffe600] text-[#2d3277] print-total-col"
+                        className="py-3 px-4 print:py-1 print:px-1.5 text-right align-middle font-mono-tabular text-base print:text-[8.5pt] font-extrabold bg-[#fff9cc] border-l-2 border-[#ffe600] text-[#2d3277] print-total-col"
                       >
                         {item.totalPreparar}
                       </td>
