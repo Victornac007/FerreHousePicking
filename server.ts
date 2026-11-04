@@ -122,123 +122,19 @@ app.post("/api/consolidate", async (req, res) => {
       ? accountNames
       : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
 
-    // 1. MODO DETERMINISTA (DIRECTO, SIN INTELIGENCIA ARTIFICIAL, 100% EXACTO)
-    if (engine === "deterministic") {
-      try {
-        const result = await consolidatePdfsDeterministically(files, names);
-        // Si el parser determinista encontró items, los retorna directamente con precisión absoluta
-        if (result.items.length > 0) {
-          return res.json(result);
-        }
-      } catch (detErr) {
-        console.warn("Fallo en extracción determinista, evaluando alternativa:", detErr);
-      }
-    }
-
-    // 2. MODO IA (SI SE SOLICITA O COMO RESPALDO PARA PDFs QUE SEAN FOTOS O ESCANEOS DE IMAGEN)
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      // Si no hay API key y no hubo resultados en determinista
-      return res.status(400).json({
-        error:
-          "No se pudieron extraer datos de texto estructurado de los PDFs. Asegúrate de subir PDFs digitales de Mercado Libre.",
-      });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-
-    const systemInstruction = `Eres el motor experto de auditoría, conteo riguroso y consolidación logística de bodega para "FerreHousePicking", especializado en comercio electrónico de ferretería industrial y Mercado Libre (Mercado Envíos / Colecta / Flex / Full).
-
-TU MISIÓN CRÍTICA:
-Analizar exhaustivamente cada página de los archivos PDF adjuntos correspondientes a hasta 5 cuentas de Mercado Libre:
-- Cuenta 1 (cta1): "${names[0]}"
-- Cuenta 2 (cta2): "${names[1]}"
-- Cuenta 3 (cta3): "${names[2]}"
-- Cuenta 4 (cta4): "${names[3]}"
-- Cuenta 5 (cta5): "${names[4]}"
-
-PROTOCOLO ESTRICTO DE CONTEO Y AUDITORÍA DE SKUs:
-1. CONTEO COMPLETO Y SIN OMISIONES:
-   - Examina línea por línea, tabla por tabla y página por página de CADA PDF adjunto.
-   - Identifica la cantidad exacta de unidades ("Cant.", "Cantidad", "Uds.", "Unidades", "x2", "x3", etc.) de cada venta o bulto.
-   - Si un mismo SKU se repite en varias ventas u órdenes dentro del mismo PDF de la misma cuenta, SUMA rigurosamente todas las unidades de esa cuenta antes de asignarlas a su propiedad (cta1 a cta5).
-
-2. HOMOLOGACIÓN Y NORMALIZACIÓN DE SKUs:
-   - Identifica el código SKU exacto, código de publicación (#MLA, #MLC, etc.), código universal (EAN/UPC) o código de barra indicado en el documento sin inventar nombres ni alterar códigos.
-   - Si dos o más cuentas vendieron el mismo producto bajo títulos ligeramente distintos, únelos bajo el mismo SKU oficial.
-
-3. ASIGNACIÓN MATEMÁTICA EXACTA POR CUENTA:
-   - cta1: Total exacto de unidades vendidas en la Cuenta 1 (0 si no vendió o no tiene PDF).
-   - cta2: Total exacto de unidades vendidas en la Cuenta 2 (0 si no vendió o no tiene PDF).
-   - cta3: Total exacto de unidades vendidas en la Cuenta 3 (0 si no vendió o no tiene PDF).
-   - cta4: Total exacto de unidades vendidas en la Cuenta 4 (0 si no vendió o no tiene PDF).
-   - cta5: Total exacto de unidades vendidas en la Cuenta 5 (0 si no vendió o no tiene PDF).
-   - totalPreparar: DEBE ser exactamente igual a la suma aritmética: cta1 + cta2 + cta3 + cta4 + cta5.
-
-4. AUDITORÍA FINAL:
-   - En 'resumenOperativo', confirma el total de SKUs y unidades analizadas.`;
-
-    const parts: Array<
-      | { text: string }
-      | { inlineData: { mimeType: string; data: string } }
-    > = [];
-
-    parts.push({
-      text: `Procesa y consolida los siguientes ${files.length} archivo(s) PDF de resúmenes de ventas / etiquetas / órdenes de preparación de Mercado Libre.`,
-    });
-
-    for (const file of files) {
-      const slotNumber = file.slotIndex + 1; // 1 to 5
-      const cleanBase64 = file.base64Data.includes(",")
-        ? file.base64Data.split(",")[1]
-        : file.base64Data;
-
-      parts.push({
-        text: `--- INICIO ARCHIVO DE CUENTA ${slotNumber} (Propiedad JSON: cta${slotNumber} - Nombre Cuenta: "${file.accountName}" - Archivo: "${file.fileName}") ---`,
-      });
-      parts.push({
-        inlineData: {
-          mimeType: file.mimeType || "application/pdf",
-          data: cleanBase64,
-        },
-      });
-    }
-
-    parts.push({
-      text: "Devuelve exclusivamente el objeto JSON estructurado con la lista consolidada de picking para bodega.",
-    });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: { parts },
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: pickingResponseSchema,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
-
-    const rawText = (response.text ?? "{}").trim();
-    const parsed = JSON.parse(rawText);
-
-    return res.json(parsed);
+    // PROCESAMIENTO DIRECTO DETERMINISTA (SIN INTELIGENCIA ARTIFICIAL, 100% EXACTO)
+    const result = await consolidatePdfsDeterministically(files, names);
+    return res.json(result);
   } catch (error: unknown) {
     console.error("Error en /api/consolidate:", error);
     const errMsg =
       error instanceof Error
         ? error.message
-        : "Error inesperado al procesar los archivos PDF.";
+        : "Error inesperado al procesar los archivos PDF de Mercado Libre.";
     return res.status(500).json({ error: errMsg });
   }
 });
+
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
