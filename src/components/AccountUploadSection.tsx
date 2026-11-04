@@ -402,13 +402,11 @@ export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
           type="button"
           onClick={onConsolidateWithGemini}
           disabled={isProcessing || uploadedCount === 0}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-[#3483fa] hover:bg-[#2968c8] active:bg-[#1f5099] disabled:bg-slate-300 disabled:text-slate-500 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs"
+          className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#3483fa] hover:bg-[#2968c8] active:bg-[#1f5099] disabled:bg-slate-300 disabled:text-slate-500 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs"
         >
           <Sparkles className="w-4 h-4 text-[#ffe600] shrink-0" />
           <span>
-            {isProcessing
-              ? "Analizando y Homologando PDFs..."
-              : `Consolidar ${uploadedCount > 0 ? uploadedCount : ""} PDF(s) con IA`}
+            {isProcessing ? "Escaneando PDFs..." : "Escanear"}
           </span>
         </button>
       </div>

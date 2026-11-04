@@ -236,7 +236,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
           </h3>
           <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
             Sube hasta 5 archivos PDF de tus cuentas de Mercado Libre y presiona{" "}
-            <strong>Consolidar con IA</strong>, o carga inmediatamente el caso de prueba de{" "}
+            <strong>Escanear</strong>, o carga inmediatamente el caso de prueba de{" "}
             <strong>25 Taladros DeWalt (5 por cuenta)</strong> para explorar la tabla y probar la impresión de bodega.
           </p>
           <div className="mt-5">

@@ -80,21 +80,10 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export default function App() {
-  // Initialize with the 25 DeWalt drills demonstration dataset so the warehouse operator
-  // can immediately inspect the consolidated table, search, CSV export, and print preview,
-  // or clear/upload their own 5 daily PDFs.
-  const initialDemo = useMemo(() => getDemoPickingData(), []);
-
-  const [slots, setSlots] = useState<AccountSlot[]>(() =>
-    INITIAL_SLOTS.map((slot, idx) => ({
-      ...slot,
-      name: initialDemo.accountNames[idx] || slot.name,
-    }))
-  );
-  const [items, setItems] = useState<PickingItem[]>(initialDemo.items);
-  const [resumenOperativo, setResumenOperativo] = useState<string>(
-    initialDemo.resumenOperativo
-  );
+  // Production operational mode: Start with clean accounts and an empty list ready for real daily PDF uploads.
+  const [slots, setSlots] = useState<AccountSlot[]>(INITIAL_SLOTS);
+  const [items, setItems] = useState<PickingItem[]>([]);
+  const [resumenOperativo, setResumenOperativo] = useState<string>("");
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
@@ -234,7 +223,7 @@ export default function App() {
       });
 
       setStatusNotice(
-        `Se cargaron ${encodedFiles.length} archivo(s) PDF en las ranuras de cuenta. Haz clic en "Consolidar PDF(s) con IA" para extraer las ventas.`
+        `Se cargaron ${encodedFiles.length} archivo(s) PDF en las ranuras de cuenta. Haz clic en "Escanear" para extraer las ventas.`
       );
     } catch (err: unknown) {
       setErrorBanner(
