@@ -1,0 +1,6 @@
+{
+  "name": "FerreHousePicking",
+  "description": "Sistema inteligente de consolidación de órdenes de picking y envíos para múltiples cuentas de Mercado Libre con impresión para bodega y exportación Excel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
