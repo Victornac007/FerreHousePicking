@@ -492,25 +492,35 @@ export async function parsePdfLocally(
       const rawSku = cleanSku(item.sku);
       if (!rawSku) continue;
       const normalizedKey = rawSku.toUpperCase();
+      const qtyToAdd = Math.max(0, Math.round(Number(item.cantidad) || 1));
 
       const existing = mergedMap.get(normalizedKey);
       if (existing) {
-        if (slotIdx === 0) existing.cta1 += item.cantidad;
-        else if (slotIdx === 1) existing.cta2 += item.cantidad;
-        else if (slotIdx === 2) existing.cta3 += item.cantidad;
-        else if (slotIdx === 3) existing.cta4 += item.cantidad;
-        else if (slotIdx === 4) existing.cta5 += item.cantidad;
+        // Acumular la cantidad detectada en la columna de la cuenta correspondiente
+        if (slotIdx === 0) existing.cta1 += qtyToAdd;
+        else if (slotIdx === 1) existing.cta2 += qtyToAdd;
+        else if (slotIdx === 2) existing.cta3 += qtyToAdd;
+        else if (slotIdx === 3) existing.cta4 += qtyToAdd;
+        else if (slotIdx === 4) existing.cta5 += qtyToAdd;
 
+        // Sumar acumulativamente en totalPreparar el total de todas las cuentas
         existing.totalPreparar =
           existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
 
-        // Enhance product title if longer / more descriptive
-        if (item.producto && item.producto.length > existing.producto.length) {
+        // Mejorar la descripción del producto si la nueva cadena es más descriptiva
+        if (item.producto && item.producto.length > existing.producto.length && !item.producto.startsWith("Publicacion")) {
           existing.producto = item.producto;
           existing.marca = detectBrand(item.producto);
         }
       } else {
         const prodTitle = item.producto || rawSku;
+        const c1 = slotIdx === 0 ? qtyToAdd : 0;
+        const c2 = slotIdx === 1 ? qtyToAdd : 0;
+        const c3 = slotIdx === 2 ? qtyToAdd : 0;
+        const c4 = slotIdx === 3 ? qtyToAdd : 0;
+        const c5 = slotIdx === 4 ? qtyToAdd : 0;
+        const computedTotal = c1 + c2 + c3 + c4 + c5;
+
         const newItem: PickingItem = {
           id: `item-${normalizedKey}`,
           sku: rawSku,
@@ -518,12 +528,12 @@ export async function parsePdfLocally(
           marca: detectBrand(prodTitle),
           modelo: "Estándar",
           categoria: "Ferretería General",
-          cta1: slotIdx === 0 ? item.cantidad : 0,
-          cta2: slotIdx === 1 ? item.cantidad : 0,
-          cta3: slotIdx === 2 ? item.cantidad : 0,
-          cta4: slotIdx === 3 ? item.cantidad : 0,
-          cta5: slotIdx === 4 ? item.cantidad : 0,
-          totalPreparar: item.cantidad,
+          cta1: c1,
+          cta2: c2,
+          cta3: c3,
+          cta4: c4,
+          cta5: c5,
+          totalPreparar: computedTotal,
           preparado: false,
         };
         mergedMap.set(normalizedKey, newItem);

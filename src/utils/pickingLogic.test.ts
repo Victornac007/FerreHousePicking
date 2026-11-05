@@ -249,3 +249,21 @@ test("auditPickingConsolidation compares original vs consolidated units and aler
   assert.equal(reportFlawed.discrepancies[0].consolidatedUnits, 30);
   assert.ok(reportFlawed.alertMessage?.includes("Alerta de discrepancia"));
 });
+
+test("cumulative totalPreparar sums all account columns (cta1..cta5) accurately", () => {
+  const itemRaw = [
+    { sku: "ORI-BEN-52", cta1: 10, cta2: 5 },
+    { sku: "ORI-BEN-52", cta1: 2, cta3: 8 },
+    { sku: "ORI-BEN-52", cta4: 4, cta5: 1 },
+  ];
+
+  const consolidated = normalizePickingItems(itemRaw);
+  assert.equal(consolidated.length, 1);
+  assert.equal(consolidated[0].cta1, 12);
+  assert.equal(consolidated[0].cta2, 5);
+  assert.equal(consolidated[0].cta3, 8);
+  assert.equal(consolidated[0].cta4, 4);
+  assert.equal(consolidated[0].cta5, 1);
+  assert.equal(consolidated[0].totalPreparar, 30);
+});
+

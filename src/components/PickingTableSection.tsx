@@ -261,10 +261,11 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => onToggleSort("sku")}
-                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold"
+                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold text-[#2d3277]"
+                    title="Ordenar por Código de SKU Original"
                   >
-                    <span>SKU</span>
-                    <ArrowUpDown className="w-3 h-3 no-print" />
+                    <span>SKU Original</span>
+                    <ArrowUpDown className="w-3 h-3 no-print text-slate-500" />
                   </button>
                 </th>
                 <th className="py-3 px-3 min-w-[200px] print:w-auto print:px-1.5">
@@ -353,17 +354,18 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         />
                       </td>
 
-                      {/* Columna 2: SKU / Código */}
+                      {/* Columna 2: SKU Original de Producto */}
                       <td className="py-3 px-3 print:py-1 print:px-1.5 align-middle">
-                        <div
-                          className={`font-mono-tabular font-bold text-xs print:text-[7pt] print:leading-tight break-all ${
+                        <span
+                          title={`SKU Original: ${item.sku}`}
+                          className={`font-mono-tabular font-black text-xs print:text-[7.5pt] print:leading-tight break-all inline-block px-2 py-0.5 rounded border ${
                             item.preparado
-                              ? "line-through text-slate-500"
-                              : "text-slate-900"
+                              ? "line-through text-slate-400 bg-slate-100 border-slate-200"
+                              : "text-[#2d3277] bg-slate-100/90 border-slate-300 shadow-2xs"
                           }`}
                         >
                           {item.sku}
-                        </div>
+                        </span>
                       </td>
 
                       {/* Columna 3: Producto, Marca y Modelo */}
