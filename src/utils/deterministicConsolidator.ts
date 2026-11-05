@@ -45,11 +45,12 @@ export function cleanSku(val: string): string {
 
   const noiseWords = [
     "VENDEDOR", "ARTICULO", "PRODUCTO", "REFERENCIA", "DESCRIPCION",
-    "CANTIDAD", "CANT", "PAGINA", "FECHA", "GUIA",
+    "CANTIDAD", "CANT", "PAGINA", "FECHA", "GUIA", "TOTAL",
     "RECEPTOR", "ENVIO", "COLECTA", "COMPRADOR", "DIRECCION", "PAQUETE",
     "CARRIER", "FIRMA CARRIER", "FECHA Y HORA DE RETIRO", "FECHA Y HORA"
   ];
-  if (noiseWords.some(w => s.toUpperCase().includes(w))) {
+  const upper = s.toUpperCase();
+  if (noiseWords.some(w => upper === w || upper.startsWith(w + " ") || upper.endsWith(" " + w))) {
     return "";
   }
 
@@ -137,7 +138,7 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
         let qty = 1;
         let prodName = "";
 
-        // Check surrounding lines (-4 to +4)
+        // Check surrounding lines (-4 to +4) for quantity
         for (let offset = -4; offset <= 4; offset++) {
           if (offset === 0) continue;
           const targetIdx = i + offset;
@@ -149,23 +150,64 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
             if (qtyMatch && !targetLine.includes("ORDEN") && !targetLine.includes("FECHA") && !targetLine.includes("PAQUETE") && !targetLine.includes("PAGINA")) {
               const parsedQ = parseInt(qtyMatch[1], 10);
               if (parsedQ > 0 && parsedQ < 100000) qty = parsedQ;
-            } else if (
-              !prodName &&
-              targetLine.length > 5 &&
-              !targetLine.toLowerCase().includes("sku:") &&
-              !targetLine.toLowerCase().includes("codigo:") &&
-              !/^(PAGINA|FECHA|ORDEN|GUIA|RECEPTOR|ENVIO|DESTINATARIO|COMPRADOR|PACK ID|DESPACHA|IDENTIFICACION|PRODUCTOS|COLOR|VOLTAJE|CARRIER|FIRMA|FECHA Y HORA|#)/i.test(targetLine) &&
-              !/^[A-Z0-9]{18,35}$/.test(targetLine) && // Filter tracking codes
-              !/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}$/.test(targetLine) // Filter buyer full names
-            ) {
-              prodName = cleanProductName(targetLine);
             }
           }
         }
 
+        // Search full page lines for a title sharing meaningful words with SKU
+        const skuWords = sku
+          .toLowerCase()
+          .replace(/[^a-z0-9áéíóúñ]/g, " ")
+          .split(/\s+/)
+          .filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !["sku", "cod", "codigo", "tasbel", "grande", "mini", "set"].includes(w));
+
+        if (skuWords.length > 0) {
+          for (const lText of lines) {
+            if (
+              lText.length > 8 &&
+              !lText.toLowerCase().includes("sku:") &&
+              !lText.toLowerCase().includes("codigo:") &&
+              !/^(PAGINA|FECHA|ORDEN|GUIA|RECEPTOR|ENVIO|DESTINATARIO|COMPRADOR|PACK ID|DESPACHA|IDENTIFICACION|PRODUCTOS|COLOR|VOLTAJE|CARRIER|FIRMA|FECHA Y HORA|#)/i.test(lText) &&
+              !/^[A-Z0-9]{18,35}$/.test(lText) &&
+              !/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}$/.test(lText)
+            ) {
+              const lowerL = lText.toLowerCase();
+              if (skuWords.some((w) => lowerL.includes(w))) {
+                prodName = cleanProductName(lText);
+                break;
+              }
+            }
+          }
+        }
+
+        // If no matching line found, search immediate surrounding lines (-3 to +3)
+        if (!prodName) {
+          for (let offset = -3; offset <= 3; offset++) {
+            if (offset === 0) continue;
+            const targetIdx = i + offset;
+            if (targetIdx >= 0 && targetIdx < lines.length) {
+              const targetLine = lines[targetIdx];
+              if (
+                targetLine.length > 8 &&
+                !targetLine.toLowerCase().includes("sku:") &&
+                !targetLine.toLowerCase().includes("codigo:") &&
+                !/^(PAGINA|FECHA|ORDEN|GUIA|RECEPTOR|ENVIO|DESTINATARIO|COMPRADOR|PACK ID|DESPACHA|IDENTIFICACION|PRODUCTOS|COLOR|VOLTAJE|CARRIER|FIRMA|FECHA Y HORA|#)/i.test(targetLine) &&
+                !/^[A-Z0-9]{18,35}$/.test(targetLine) &&
+                !/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}$/.test(targetLine)
+              ) {
+                prodName = cleanProductName(targetLine);
+                break;
+              }
+            }
+          }
+        }
+
+        // Final fallback: capitalize and format clean SKU
+        const fallbackTitle = sku.replace(/^[0-9]+\.\s*/, "").replace(/^[-_\s.]+|[-_\s.]+$|/g, "").trim() || sku;
+
         results.push({
           sku,
-          producto: prodName || sku,
+          producto: prodName || fallbackTitle,
           cantidad: qty,
         });
         continue;
