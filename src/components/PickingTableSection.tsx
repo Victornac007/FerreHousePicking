@@ -309,14 +309,14 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
             <thead>
               <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                 <th className="py-3 px-3 text-center w-12 sm:w-14 print:w-[28px] print:px-1">Check</th>
-                <th className="py-3 px-3 print:w-[68px] print:px-1.5">
+                <th className="py-3 px-3 print:w-[85px] print:px-1.5">
                   <button
                     type="button"
                     onClick={() => onToggleSort("sku")}
-                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold text-[#2d3277]"
-                    title="Ordenar por Código de SKU Original"
+                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-extrabold text-[#2d3277]"
+                    title="Ordenar por Código de SKU Completo de la Planilla"
                   >
-                    <span>SKU Original</span>
+                    <span>SKU Completo</span>
                     <ArrowUpDown className="w-3 h-3 no-print text-slate-500" />
                   </button>
                 </th>
@@ -406,14 +406,14 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         />
                       </td>
 
-                      {/* Columna 2: SKU Original de Producto */}
+                      {/* Columna 2: SKU Completo de Producto de la Planilla */}
                       <td className="py-3 px-3 print:py-1 print:px-1.5 align-middle">
                         <span
-                          title={`SKU Original: ${item.sku}`}
-                          className={`font-mono-tabular font-black text-xs print:text-[7.5pt] print:leading-tight break-all inline-block px-2 py-0.5 rounded border ${
+                          title={`SKU Completo: ${item.sku}`}
+                          className={`font-mono-tabular font-extrabold text-xs print:text-[8pt] print:leading-tight break-words inline-block px-2.5 py-1 rounded border ${
                             item.preparado
                               ? "line-through text-slate-400 bg-slate-100 border-slate-200"
-                              : "text-[#2d3277] bg-slate-100/90 border-slate-300 shadow-2xs"
+                              : "text-[#2d3277] bg-amber-50/90 border-amber-300 shadow-2xs"
                           }`}
                         >
                           {item.sku}

@@ -130,15 +130,15 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
     }
 
     // Pattern 2: Multi-line label snippet
-    // Line i contains SKU prefix ("Codigo vendedor: TAL-DCD7781")
+    // Line i contains SKU prefix ("Codigo vendedor: TAL-DCD7781" or "SKU: 0040 grande - 22")
     if (inlineSkuMatch) {
       const sku = cleanSku(inlineSkuMatch[1]);
-      if (sku && !sku.toUpperCase().startsWith("PAGINA") && !sku.toUpperCase().startsWith("TOTAL")) {
+      if (sku && !sku.toUpperCase().startsWith("PAGINA")) {
         let qty = 1;
         let prodName = "";
 
-        // Check surrounding lines (-2 to +3)
-        for (let offset = -2; offset <= 3; offset++) {
+        // Check surrounding lines (-4 to +4)
+        for (let offset = -4; offset <= 4; offset++) {
           if (offset === 0) continue;
           const targetIdx = i + offset;
           if (targetIdx >= 0 && targetIdx < lines.length) {
@@ -149,7 +149,15 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
             if (qtyMatch && !targetLine.includes("ORDEN") && !targetLine.includes("FECHA") && !targetLine.includes("PAQUETE") && !targetLine.includes("PAGINA")) {
               const parsedQ = parseInt(qtyMatch[1], 10);
               if (parsedQ > 0 && parsedQ < 100000) qty = parsedQ;
-            } else if (!prodName && targetLine.length > 3 && !targetLine.includes("SKU") && !targetLine.includes("CODIGO") && !/^(PAGINA|FECHA|ORDEN|GUIA|RECEPTOR|ENVIO|DESTINATARIO|COMPRADOR|#)/i.test(targetLine)) {
+            } else if (
+              !prodName &&
+              targetLine.length > 5 &&
+              !targetLine.toLowerCase().includes("sku:") &&
+              !targetLine.toLowerCase().includes("codigo:") &&
+              !/^(PAGINA|FECHA|ORDEN|GUIA|RECEPTOR|ENVIO|DESTINATARIO|COMPRADOR|PACK ID|DESPACHA|IDENTIFICACION|PRODUCTOS|COLOR|VOLTAJE|CARRIER|FIRMA|FECHA Y HORA|#)/i.test(targetLine) &&
+              !/^[A-Z0-9]{18,35}$/.test(targetLine) && // Filter tracking codes
+              !/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}$/.test(targetLine) // Filter buyer full names
+            ) {
               prodName = cleanProductName(targetLine);
             }
           }

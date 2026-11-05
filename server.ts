@@ -71,11 +71,13 @@ app.post("/api/consolidate", async (req, res) => {
 
           const prompt = `Analiza este documento PDF de Mercado Libre (cuenta: ${names[slotIdx]}).
 Extrae absolutamente TODOS los productos listados.
-Es CRÍTICO extraer:
-1. El código SKU (código de vendedor, SKU de producto o código de artículo).
-2. El título o nombre del producto.
-3. La cantidad exacta de unidades enviadas o a preparar.
-Es importante mantener el SKU exacto tal como aparece en el archivo, ya que productos de cuentas distintas pueden tener nombres diferentes pero el mismo SKU.
+
+REGLAS DE EXTRACCIÓN Y AGRUPACIÓN POR SKU:
+1. Para cada producto, extrae obligatoriamente el código SKU completo que figura exactamente debajo del título del producto (marcado como "SKU: ...").
+2. En el campo "sku", coloca la cadena completa y exacta de SKU tal como aparece en la planilla, sin recortar ni abreviar (ejemplos reales: "orilladora bencinera tasbel 37´´", "setjardine5en1 0116-40", "0040 grande - 22", "Perchero Circular - 12´´").
+3. Es OBLIGATORIO agrupar los registros basándose ÚNICAMENTE en la coincidencia del código SKU. NO agrupes por título ni por nombre de producto. Si dos productos tienen nombres o palabras distintas pero poseen el mismo SKU exacto, pertenecen al mismo producto y deben unificarse sumando sus cantidades.
+4. Extrae también el título o nombre principal del producto y la cantidad exacta de unidades enviadas ("Cantidad: ...").
+
 Responde únicamente en el formato JSON estructurado especificado.`;
 
           const aiResponse = await aiClient.models.generateContent({
