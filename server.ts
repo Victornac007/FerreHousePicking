@@ -129,7 +129,7 @@ app.post("/api/consolidate", async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY;
 
-    // 2. ENRIQUECIMIENTO CON GEMINI 3.8 FLASH (SOLO SI HAY API KEY Y MOTOR NO ES ESTRICTAMENTE DETERMINISTA)
+    // 2. ENRIQUECIMIENTO CON GEMINI (SOLO SI HAY API KEY Y MOTOR NO ES ESTRICTAMENTE DETERMINISTA)
     if (apiKey && engine !== "deterministic" && finalItems.length > 0) {
       try {
         const ai = new GoogleGenAI({
@@ -195,16 +195,29 @@ INSTRUCCIONES:
 3. Asigna la marca correcta, modelo exacto y categoría ferretera correspondiente.
 4. Devuelve la información homologada en el JSON estandarizado.`;
 
-        const aiResponse = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: [{ text: enrichmentPrompt }],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: enrichmentSchema,
-          },
-        });
+        let aiResponse;
+        try {
+          aiResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [{ text: enrichmentPrompt }],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: enrichmentSchema,
+            },
+          });
+        } catch (mErr) {
+          console.warn("Aviso: gemini-2.5-flash no disponible o 503 alta demanda, reintentando con gemini-1.5-flash:", mErr);
+          aiResponse = await ai.models.generateContent({
+            model: "gemini-1.5-flash",
+            contents: [{ text: enrichmentPrompt }],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: enrichmentSchema,
+            },
+          });
+        }
 
-        const rawAiText = (aiResponse.text ?? "{}").trim();
+        const rawAiText = (aiResponse?.text ?? "{}").trim();
         const parsedAi = JSON.parse(rawAiText);
         const enrichedList = Array.isArray(parsedAi?.enrichedItems) ? parsedAi.enrichedItems : [];
 
@@ -235,7 +248,7 @@ INSTRUCCIONES:
           return item;
         });
       } catch (aiErr) {
-        console.warn("Aviso: No se pudo enriquecer con Gemini Flash, manteniendo conteo determinista directo:", aiErr);
+        console.warn("Aviso: No se pudo enriquecer con IA (503 alta demanda u otro error), manteniendo conteo determinista directo de Node.js:", aiErr);
       }
     } else if (apiKey && finalItems.length === 0) {
       // RESPALDO MULTIMODAL PARA PDFS ESCANEADOS COMO IMAGEN SIN CAPA DE TEXTO
@@ -280,19 +293,35 @@ INSTRUCCIONES:
                 ? file.base64Data.split(",")[1]
                 : file.base64Data;
 
-              const response = await ai.models.generateContent({
-                model: "gemini-3.8-flash",
-                contents: [
-                  { text: `Extrae todos los productos y cantidades exactas de este documento PDF de la cuenta ${file.slotIndex + 1}.` },
-                  { inlineData: { mimeType: file.mimeType || "application/pdf", data: cleanBase64 } },
-                ],
-                config: {
-                  responseMimeType: "application/json",
-                  responseSchema: perAccountSchema,
-                },
-              });
+              let response;
+              try {
+                response = await ai.models.generateContent({
+                  model: "gemini-2.5-flash",
+                  contents: [
+                    { text: `Extrae todos los productos y cantidades exactas de este documento PDF de la cuenta ${file.slotIndex + 1}.` },
+                    { inlineData: { mimeType: file.mimeType || "application/pdf", data: cleanBase64 } },
+                  ],
+                  config: {
+                    responseMimeType: "application/json",
+                    responseSchema: perAccountSchema,
+                  },
+                });
+              } catch (fErr) {
+                console.warn("Reintentando OCR con gemini-1.5-flash:", fErr);
+                response = await ai.models.generateContent({
+                  model: "gemini-1.5-flash",
+                  contents: [
+                    { text: `Extrae todos los productos y cantidades exactas de este documento PDF de la cuenta ${file.slotIndex + 1}.` },
+                    { inlineData: { mimeType: file.mimeType || "application/pdf", data: cleanBase64 } },
+                  ],
+                  config: {
+                    responseMimeType: "application/json",
+                    responseSchema: perAccountSchema,
+                  },
+                });
+              }
 
-              const parsed = JSON.parse((response.text ?? "{}").trim());
+              const parsed = JSON.parse((response?.text ?? "{}").trim());
               extractions.push({ slotIndex: file.slotIndex, items: parsed?.items || [] });
             } catch (err) {
               console.error(`Error procesando fallback OCR para slot ${file.slotIndex}:`, err);
@@ -349,7 +378,7 @@ INSTRUCCIONES:
     );
 
     const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
-    const modeDesc = apiKey ? "Híbrido (Conteo determinista 100% exacto + Enriquecimiento Gemini 3.8 Flash)" : "Determinista directo 100% exacto";
+    const modeDesc = apiKey ? "Híbrido (Conteo determinista 100% exacto + Enriquecimiento de IA)" : "Determinista directo 100% exacto";
     const auditStatusStr = auditReport.isValid
       ? "Auditoría de integridad: 100% exacto (0 discrepancias)"
       : `¡Discrepancia detectada!: ${auditReport.alertMessage}`;
@@ -362,12 +391,28 @@ INSTRUCCIONES:
       auditReport,
     });
   } catch (error: unknown) {
-    console.error("Error en /api/consolidate:", error);
-    const errMsg =
-      error instanceof Error
-        ? error.message
-        : "Error al procesar los archivos PDF de Mercado Libre.";
-    return res.status(500).json({ error: errMsg });
+    console.error("Error general en /api/consolidate, ejecutando respaldo determinista directo:", error);
+    try {
+      const { files, accountNames } = req.body as {
+        files: UploadedPdfPayload[];
+        accountNames: string[];
+      };
+      const names = Array.isArray(accountNames) && accountNames.length === 5
+        ? accountNames
+        : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
+      const fallbackResult = await consolidatePdfsDeterministically(files, names);
+      return res.json({
+        resumenOperativo: `Consolidación realizada en modo Determinista Local (IA con alta demanda o temporalmente no disponible): se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${fallbackResult.items.length} SKUs únicos con precisión matemática.`,
+        items: fallbackResult.items,
+        auditReport: fallbackResult.auditReport,
+      });
+    } catch (innerErr) {
+      const errMsg =
+        error instanceof Error
+          ? error.message
+          : "Error al procesar los archivos PDF de Mercado Libre.";
+      return res.status(500).json({ error: errMsg });
+    }
   }
 });
 
