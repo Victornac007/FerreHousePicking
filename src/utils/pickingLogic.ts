@@ -38,7 +38,7 @@ export type SortField = "totalPreparar" | "sku" | "producto" | "marca";
 export type SortDirection = "asc" | "desc";
 
 /**
- * Normalizes and validates raw items returned from the Gemini API or manual entry,
+ * Normalizes and validates raw items extracted locally or from manual entry,
  * guaranteeing that totalPreparar always equals cta1 + cta2 + cta3 + cta4 + cta5.
  */
 export function normalizePickingItems(rawItems: Array<Partial<PickingItem>>): PickingItem[] {
@@ -392,11 +392,11 @@ export function auditPickingConsolidation(
 import * as pdfjsLib from "pdfjs-dist";
 import { cleanSku, extractProductsFromText } from "./deterministicConsolidator";
 
-// Configure workerSrc for pdfjs-dist in browser context
+// Configure workerSrc for pdfjs-dist in browser context using jsdelivr npm CDN
 if (typeof window !== "undefined" && pdfjsLib) {
   try {
     const version = pdfjsLib.version || "3.11.174";
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
   } catch (e) {
     console.warn("No se pudo establecer workerSrc de pdfjs-dist:", e);
   }

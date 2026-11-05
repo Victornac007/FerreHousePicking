@@ -337,7 +337,7 @@ export default function App() {
     setStatusNotice("Archivos PDF removidos de las 5 ranuras.");
   };
 
-  const handleConsolidateWithGemini = async () => {
+  const handleConsolidateLocally = async () => {
     const activeFiles = slots.filter((s) => s.base64Data !== null);
     if (activeFiles.length === 0) {
       setErrorBanner(
@@ -366,7 +366,7 @@ export default function App() {
           );
         }
       } else {
-        // Fallback local en backend Node.js (también 100% determinista sin Gemini)
+        // Fallback local en backend Node.js (100% determinista)
         const response = await fetch("/api/consolidate", {
           method: "POST",
           headers: {
@@ -653,7 +653,7 @@ export default function App() {
           onUploadBatchFiles={handleUploadBatchFiles}
           onRemoveSlotFile={handleRemoveSlotFile}
           onClearAllFiles={handleClearAllFiles}
-          onConsolidateWithGemini={handleConsolidateWithGemini}
+          onConsolidateLocally={handleConsolidateLocally}
         />
 
         {/* Sección 2: Tarjetas de Resumen Superior (KPIs) */}
@@ -704,7 +704,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modal interactivo de progreso de escaneo con Gemini 3.6 Flash */}
+      {/* Modal interactivo de progreso de escaneo local */}
       <ScanProgressModal isProcessing={isProcessing} slots={slots} />
 
       {/* Modal para agregar o sumar un producto manualmente */}

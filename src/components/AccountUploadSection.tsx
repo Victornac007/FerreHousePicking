@@ -20,7 +20,7 @@ interface AccountUploadSectionProps {
   onUploadBatchFiles: (files: FileList | File[]) => Promise<void>;
   onRemoveSlotFile: (index: number) => void;
   onClearAllFiles: () => void;
-  onConsolidateWithGemini: () => Promise<void>;
+  onConsolidateLocally: () => Promise<void>;
 }
 
 export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
@@ -31,7 +31,7 @@ export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
   onUploadBatchFiles,
   onRemoveSlotFile,
   onClearAllFiles,
-  onConsolidateWithGemini,
+  onConsolidateLocally,
 }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
@@ -373,7 +373,7 @@ export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
         })}
       </div>
 
-      {/* Barra de Acción Principal para Procesar con Gemini */}
+      {/* Barra de Acción Principal para Escaneo Local */}
       <div className="mt-5 pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="text-xs text-slate-600">
           <span>Motor de homologación: </span>
@@ -386,7 +386,7 @@ export const AccountUploadSection: React.FC<AccountUploadSectionProps> = ({
 
         <button
           type="button"
-          onClick={onConsolidateWithGemini}
+          onClick={onConsolidateLocally}
           disabled={isProcessing || uploadedCount === 0}
           className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#3483fa] hover:bg-[#2968c8] active:bg-[#1f5099] disabled:bg-slate-300 disabled:text-slate-500 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs"
         >

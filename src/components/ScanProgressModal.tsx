@@ -38,7 +38,7 @@ export const ScanProgressModal: React.FC<ScanProgressModalProps> = ({
       return;
     }
 
-    // Progression loop to smoothly advance percentages while awaiting the Gemini API response
+    // Progression loop to smoothly advance percentages while awaiting local PDF extraction
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev < 28) {
@@ -244,7 +244,7 @@ export const ScanProgressModal: React.FC<ScanProgressModalProps> = ({
         {/* Footer info */}
         <div className="mt-4 text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5 pt-2 border-t border-slate-100">
           <Cpu className="w-3.5 h-3.5 text-slate-400" />
-          <span>Servidor procesando con @google/genai y Gemini 3.8 Flash (Máxima Exactitud)</span>
+          <span>Procesamiento 100% Local (pdfjs-dist + Auditoría de Integridad)</span>
         </div>
       </div>
     </div>
