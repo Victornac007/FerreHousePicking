@@ -390,7 +390,7 @@ export function auditPickingConsolidation(
 }
 
 import * as pdfjsLib from "pdfjs-dist";
-import { cleanSku, extractProductsFromText } from "./deterministicConsolidator";
+import { cleanSku, extractProductsFromText, detectBrand } from "./deterministicConsolidator";
 
 // Configure workerSrc for pdfjs-dist in browser context using jsdelivr npm CDN
 if (typeof window !== "undefined" && pdfjsLib) {
@@ -505,13 +505,15 @@ export async function parsePdfLocally(
 
         if (item.producto && item.producto.length > existing.producto.length) {
           existing.producto = item.producto;
+          existing.marca = detectBrand(item.producto);
         }
       } else {
+        const prodTitle = item.producto || rawSku;
         const newItem: PickingItem = {
           id: `item-${normalizedKey}`,
           sku: rawSku,
-          producto: item.producto || rawSku,
-          marca: "Ferretería",
+          producto: prodTitle,
+          marca: detectBrand(prodTitle),
           modelo: "Estándar",
           categoria: "Ferretería General",
           cta1: slotIdx === 0 ? item.cantidad : 0,

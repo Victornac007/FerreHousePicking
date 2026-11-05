@@ -46,19 +46,20 @@ export function cleanSku(val: string): string {
   return s;
 }
 
-function cleanProductName(val: string): string {
+export function cleanProductName(val: string): string {
   let p = val.trim();
   p = p.replace(/\s+/g, " ");
   p = p.replace(/^[\s\-:;,.]+|[\s\-:;,.]+$/g, "");
   return p;
 }
 
-function detectBrand(text: string): string {
+export function detectBrand(text: string): string {
   const t = text.toLowerCase();
   const known = [
     "dewalt", "bosch", "makita", "stanley", "truper", "black+decker", "black & decker",
     "milwaukee", "skil", "einhell", "irwin", "karcher", "total", "ingco", "bahco",
-    "dremel", "stihl", "pretul", "uber", "3m", "sika", "wurth", "loctite", "bellota"
+    "dremel", "stihl", "pretul", "uber", "3m", "sika", "wurth", "loctite", "bellota",
+    "lusqtoff", "sturm", "kraft", "orilladora", "desmalezadora"
   ];
   for (const b of known) {
     if (new RegExp(`\\b${b.replace("+", "\\+")}\\b`, "i").test(t)) {
@@ -171,7 +172,10 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
       const qty = parseInt(prefixQtyMatch[1], 10);
       const possibleSku = prefixQtyMatch[2] ? cleanSku(prefixQtyMatch[2]) : null;
       const rest = cleanProductName(prefixQtyMatch[3] || "");
-      const finalSku = possibleSku || (rest ? cleanSku(rest.slice(0, 15)) : "SKU-PROD");
+      const generatedSlug = rest
+        ? "SKU-" + rest.toUpperCase().replace(/[^A-Z0-9]/g, "-").replace(/-+/g, "-").slice(0, 30).replace(/-$/, "")
+        : "SKU-PROD";
+      const finalSku = possibleSku || generatedSlug;
       const finalProd = rest || finalSku;
       if (finalSku && qty > 0 && !finalSku.toUpperCase().startsWith("PAGINA")) {
         results.push({ sku: finalSku, producto: finalProd, cantidad: qty });
