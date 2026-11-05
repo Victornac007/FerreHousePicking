@@ -107,10 +107,10 @@ import { auditPickingConsolidation } from "./src/utils/pickingLogic";
 
 app.post("/api/consolidate", async (req, res) => {
   try {
-    const { files, accountNames, engine = "hybrid" } = req.body as {
+    const { files, accountNames, engine = "deterministic" } = req.body as {
       files: UploadedPdfPayload[];
       accountNames: string[];
-      engine?: "deterministic" | "ai" | "hybrid";
+      engine?: "deterministic" | "ai" | "hybrid" | "ai_enrich";
     };
 
     if (!files || !Array.isArray(files) || files.length === 0) {
@@ -129,8 +129,8 @@ app.post("/api/consolidate", async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY;
 
-    // 2. ENRIQUECIMIENTO CON GEMINI (SOLO SI HAY API KEY Y MOTOR NO ES ESTRICTAMENTE DETERMINISTA)
-    if (apiKey && engine !== "deterministic" && finalItems.length > 0) {
+    // 2. ENRIQUECIMIENTO CON IA (OPCIONAL - TOTALMENTE PROTEGIDO CONTRA ERRORES 429 / 503 DE CUOTA)
+    if (apiKey && engine === "ai_enrich" && finalItems.length > 0) {
       try {
         const ai = new GoogleGenAI({
           apiKey,
@@ -141,7 +141,6 @@ app.post("/api/consolidate", async (req, res) => {
           },
         });
 
-        // Preparar lista de SKUs y nombres preliminares para homologación inteligente con Gemini
         const skuList = finalItems.map((it) => ({
           sku: it.sku,
           producto: it.producto,
@@ -153,30 +152,14 @@ app.post("/api/consolidate", async (req, res) => {
           properties: {
             enrichedItems: {
               type: Type.ARRAY,
-              description: "Lista de SKUs con nombres comerciales, marcas, modelos y categorías enriquecidas.",
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  sku: {
-                    type: Type.STRING,
-                    description: "Código SKU exacto coincidente.",
-                  },
-                  producto: {
-                    type: Type.STRING,
-                    description: "Nombre comercial estandarizado y descriptivo del producto en español.",
-                  },
-                  marca: {
-                    type: Type.STRING,
-                    description: "Marca comercial principal (ej. DeWalt, Bosch, Makita, Stanley, Truper).",
-                  },
-                  modelo: {
-                    type: Type.STRING,
-                    description: "Modelo o especificación clave.",
-                  },
-                  categoria: {
-                    type: Type.STRING,
-                    description: "Categoría ferretera.",
-                  },
+                  sku: { type: Type.STRING },
+                  producto: { type: Type.STRING },
+                  marca: { type: Type.STRING },
+                  modelo: { type: Type.STRING },
+                  categoria: { type: Type.STRING },
                 },
                 required: ["sku", "producto", "marca", "modelo", "categoria"],
               },
@@ -185,15 +168,9 @@ app.post("/api/consolidate", async (req, res) => {
           required: ["enrichedItems"],
         };
 
-        const enrichmentPrompt = `Analiza este listado de SKUs y nombres preliminares extraídos de documentos PDF de Mercado Libre:
+        const enrichmentPrompt = `Analiza este listado de SKUs y nombres de productos ferreteros:
 ${JSON.stringify(skuList, null, 2)}
-
-Tu tarea es exclusivamente HOMOLOGAR Y ENRIQUECER los nombres de los productos, marcas, modelos y categorías ferreteras.
-INSTRUCCIONES:
-1. Mantén exacto el código SKU.
-2. Si el producto tiene un nombre corto o abreviado, expande el título para que sea claro en bodega ferretera (ej. "TAL PERC 20V DCD7781" -> "Taladro Percutor 20V MAX DeWalt").
-3. Asigna la marca correcta, modelo exacto y categoría ferretera correspondiente.
-4. Devuelve la información homologada en el JSON estandarizado.`;
+Estandariza los nombres de productos, marcas y categorías sin cambiar el código SKU.`;
 
         let aiResponse;
         try {
@@ -205,170 +182,41 @@ INSTRUCCIONES:
               responseSchema: enrichmentSchema,
             },
           });
-        } catch (mErr) {
-          console.warn("Aviso: gemini-2.5-flash no disponible o 503 alta demanda, reintentando con gemini-1.5-flash:", mErr);
-          aiResponse = await ai.models.generateContent({
-            model: "gemini-1.5-flash",
-            contents: [{ text: enrichmentPrompt }],
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: enrichmentSchema,
-            },
-          });
-        }
 
-        const rawAiText = (aiResponse?.text ?? "{}").trim();
-        const parsedAi = JSON.parse(rawAiText);
-        const enrichedList = Array.isArray(parsedAi?.enrichedItems) ? parsedAi.enrichedItems : [];
+          const rawAiText = (aiResponse?.text ?? "{}").trim();
+          const parsedAi = JSON.parse(rawAiText);
+          const enrichedList = Array.isArray(parsedAi?.enrichedItems) ? parsedAi.enrichedItems : [];
 
-        // Mapear el enriquecimiento sobre los conteos deterministas blindados
-        const enrichmentMap = new Map<string, { producto: string; marca: string; modelo: string; categoria: string }>();
-        for (const e of enrichedList) {
-          if (e.sku) {
-            enrichmentMap.set(e.sku.trim().toUpperCase(), {
-              producto: (e.producto || "").trim(),
-              marca: (e.marca || "").trim(),
-              modelo: (e.modelo || "").trim(),
-              categoria: (e.categoria || "").trim(),
-            });
-          }
-        }
-
-        finalItems = finalItems.map((item) => {
-          const match = enrichmentMap.get(item.sku.toUpperCase());
-          if (match) {
-            return {
-              ...item,
-              producto: match.producto || item.producto,
-              marca: match.marca || item.marca,
-              modelo: match.modelo || item.modelo,
-              categoria: match.categoria || item.categoria,
-            };
-          }
-          return item;
-        });
-      } catch (aiErr) {
-        console.warn("Aviso: No se pudo enriquecer con IA (503 alta demanda u otro error), manteniendo conteo determinista directo de Node.js:", aiErr);
-      }
-    } else if (apiKey && finalItems.length === 0) {
-      // RESPALDO MULTIMODAL PARA PDFS ESCANEADOS COMO IMAGEN SIN CAPA DE TEXTO
-      try {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: {
-            headers: {
-              "User-Agent": "aistudio-build",
-            },
-          },
-        });
-
-        const perAccountSchema = {
-          type: Type.OBJECT,
-          properties: {
-            items: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  sku: { type: Type.STRING },
-                  producto: { type: Type.STRING },
-                  marca: { type: Type.STRING },
-                  modelo: { type: Type.STRING },
-                  categoria: { type: Type.STRING },
-                  cantidad: { type: Type.INTEGER },
-                },
-                required: ["sku", "producto", "cantidad"],
-              },
-            },
-          },
-          required: ["items"],
-        };
-
-        const extractions: Array<{ slotIndex: number; items: Array<{ sku: string; producto: string; marca?: string; modelo?: string; categoria?: string; cantidad: number }> }> = [];
-
-        await Promise.all(
-          files.map(async (file) => {
-            try {
-              const cleanBase64 = file.base64Data.includes(",")
-                ? file.base64Data.split(",")[1]
-                : file.base64Data;
-
-              let response;
-              try {
-                response = await ai.models.generateContent({
-                  model: "gemini-2.5-flash",
-                  contents: [
-                    { text: `Extrae todos los productos y cantidades exactas de este documento PDF de la cuenta ${file.slotIndex + 1}.` },
-                    { inlineData: { mimeType: file.mimeType || "application/pdf", data: cleanBase64 } },
-                  ],
-                  config: {
-                    responseMimeType: "application/json",
-                    responseSchema: perAccountSchema,
-                  },
-                });
-              } catch (fErr) {
-                console.warn("Reintentando OCR con gemini-1.5-flash:", fErr);
-                response = await ai.models.generateContent({
-                  model: "gemini-1.5-flash",
-                  contents: [
-                    { text: `Extrae todos los productos y cantidades exactas de este documento PDF de la cuenta ${file.slotIndex + 1}.` },
-                    { inlineData: { mimeType: file.mimeType || "application/pdf", data: cleanBase64 } },
-                  ],
-                  config: {
-                    responseMimeType: "application/json",
-                    responseSchema: perAccountSchema,
-                  },
-                });
-              }
-
-              const parsed = JSON.parse((response?.text ?? "{}").trim());
-              extractions.push({ slotIndex: file.slotIndex, items: parsed?.items || [] });
-            } catch (err) {
-              console.error(`Error procesando fallback OCR para slot ${file.slotIndex}:`, err);
-            }
-          })
-        );
-
-        const fallbackMap = new Map<string, typeof finalItems[0]>();
-        for (const ext of extractions) {
-          const slot = ext.slotIndex;
-          for (const item of ext.items) {
-            const rawSku = String(item.sku || "").trim();
-            if (!rawSku) continue;
-            const normKey = rawSku.toUpperCase();
-            const q = Math.max(0, Math.round(Number(item.cantidad) || 0));
-            if (q === 0) continue;
-
-            const existing = fallbackMap.get(normKey);
-            if (existing) {
-              if (slot === 0) existing.cta1 += q;
-              else if (slot === 1) existing.cta2 += q;
-              else if (slot === 2) existing.cta3 += q;
-              else if (slot === 3) existing.cta4 += q;
-              else if (slot === 4) existing.cta5 += q;
-              existing.totalPreparar = existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
-            } else {
-              fallbackMap.set(normKey, {
-                id: `item-${normKey}`,
-                sku: rawSku,
-                producto: item.producto || rawSku,
-                marca: item.marca || "Ferretería",
-                modelo: item.modelo || "Estándar",
-                categoria: item.categoria || "Ferretería General",
-                cta1: slot === 0 ? q : 0,
-                cta2: slot === 1 ? q : 0,
-                cta3: slot === 2 ? q : 0,
-                cta4: slot === 3 ? q : 0,
-                cta5: slot === 4 ? q : 0,
-                totalPreparar: q,
-                preparado: false,
+          const enrichmentMap = new Map<string, { producto: string; marca: string; modelo: string; categoria: string }>();
+          for (const e of enrichedList) {
+            if (e.sku) {
+              enrichmentMap.set(e.sku.trim().toUpperCase(), {
+                producto: (e.producto || "").trim(),
+                marca: (e.marca || "").trim(),
+                modelo: (e.modelo || "").trim(),
+                categoria: (e.categoria || "").trim(),
               });
             }
           }
+
+          finalItems = finalItems.map((item) => {
+            const match = enrichmentMap.get(item.sku.toUpperCase());
+            if (match) {
+              return {
+                ...item,
+                producto: match.producto || item.producto,
+                marca: match.marca || item.marca,
+                modelo: match.modelo || item.modelo,
+                categoria: match.categoria || item.categoria,
+              };
+            }
+            return item;
+          });
+        } catch (mErr) {
+          console.warn("Aviso: Cuota o alta demanda en API de Gemini, utilizando enriquecimiento local:", mErr);
         }
-        finalItems = Array.from(fallbackMap.values());
-      } catch (fallbackErr) {
-        console.error("Error en fallback visual OCR:", fallbackErr);
+      } catch (aiErr) {
+        console.warn("Aviso: No se pudo conectar a la API de IA (cuota agotada o sin red), continuando con motor determinista de alta velocidad:", aiErr);
       }
     }
 
@@ -378,12 +226,11 @@ INSTRUCCIONES:
     );
 
     const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
-    const modeDesc = apiKey ? "Híbrido (Conteo determinista 100% exacto + Enriquecimiento de IA)" : "Determinista directo 100% exacto";
     const auditStatusStr = auditReport.isValid
       ? "Auditoría de integridad: 100% exacto (0 discrepancias)"
       : `¡Discrepancia detectada!: ${auditReport.alertMessage}`;
 
-    const resumenOperativo = `Consolidación de picking realizada en modo ${modeDesc}: se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas. ${auditStatusStr}.`;
+    const resumenOperativo = `Consolidación de picking realizada en modo Determinista Directo (100% Precisión Local): se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas. ${auditStatusStr}.`;
 
     return res.json({
       resumenOperativo,
