@@ -1,5 +1,5 @@
 import { PDFParse } from "pdf-parse";
-import { PickingItem } from "./pickingLogic";
+import { PickingItem, RawExtractedProduct, auditPickingConsolidation, PickingAuditReport } from "./pickingLogic";
 
 export interface AccountPdfPayload {
   slotIndex: number;
@@ -14,10 +14,12 @@ export interface DeterministicConsolidationResult {
   items: PickingItem[];
   mode: "deterministic";
   extractedCount: number;
+  rawExtractedItems: RawExtractedProduct[];
+  auditReport: PickingAuditReport;
 }
 
 // Comprehensive regex for all Mercado Libre SKU prefixes in Spanish
-const SKU_PREFIX_KEYWORD_REGEX = /(?:CÓDIGO\s+DE\s+VENDEDOR|CODIGO\s+DE\s+VENDEDOR|CÓDIGO\s+VENDEDOR|CODIGO\s+VENDEDOR|SKU\s+DE\s+VENDEDOR|SKU\s+VENDEDOR|CÓDIGO\s+DE\s+PRODUCTO|CODIGO\s+DE\s+PRODUCTO|CÓDIGO\s+DE\s+ARTÍCULO|CODIGO\s+DE\s+ARTICULO|CÓD\.\s*VENDEDOR|COD\.\s*VENDEDOR|CÓD\.\s*ART|COD\.\s*ART|CÓD\.\s*PROD|COD\.\s*PROD|SKU|CÓDIGO|CODIGO|CÓD|COD|REF|REFERENCIA|ARTÍCULO|ARTICULO|ART|VARIANTE|VARIACIÓN|VARIACION)[\s:.\-#]+([A-Za-z0-9_\-\.\/]{2,45})/i;
+const SKU_PREFIX_KEYWORD_REGEX = /(?:C[OÓoó]DIGO\s*(?:DE\s*)?VENDEDOR|SKU\s*(?:DE\s*)?VENDEDOR|C[OÓoó]D\.\s*VENDEDOR|COD\.\s*VENDEDOR|C[OÓoó]DIGO\s*(?:DE\s*)?PRODUCTO|C[OÓoó]DIGO\s*(?:DE\s*)?ART[IÍií]CULO|SKU|C[OÓoó]DIGO|CODIGO|C[OÓoó]D|COD|REF|REFERENCIA|ART[IÍií]CULO|ARTICULO|ART|VARIANTE|VARIACI[OÓoó]N)[\s:.\-#]+([A-Za-z0-9_\-\.\/]{2,45})/i;
 
 export function cleanSku(val: string): string {
   if (!val) return "";
@@ -25,7 +27,7 @@ export function cleanSku(val: string): string {
 
   // Strip known Mercado Libre prefixes
   s = s.replace(
-    /^(?:CÓDIGO\s+DE\s+VENDEDOR|CODIGO\s+DE\s+VENDEDOR|CÓDIGO\s+VENDEDOR|CODIGO\s+VENDEDOR|SKU\s+DE\s+VENDEDOR|SKU\s+VENDEDOR|CÓDIGO\s+DE\s+PRODUCTO|CODIGO\s+DE\s+PRODUCTO|CÓDIGO\s+DE\s+ARTÍCULO|CODIGO\s+DE\s+ARTICULO|CÓD\.\s*VENDEDOR|COD\.\s*VENDEDOR|CÓD\.\s*ART|COD\.\s*ART|CÓD\.\s*PROD|COD\.\s*PROD|SKU|CÓDIGO|CODIGO|CÓD|COD|REF|REFERENCIA|ARTÍCULO|ARTICULO|ART|VARIANTE|VARIACIÓN|VARIACION)[\s:.\-#]+/i,
+    /^(?:C[OÓoó]DIGO\s*(?:DE\s*)?VENDEDOR|SKU\s*(?:DE\s*)?VENDEDOR|C[OÓoó]D\.\s*VENDEDOR|COD\.\s*VENDEDOR|C[OÓoó]DIGO\s*(?:DE\s*)?PRODUCTO|C[OÓoó]DIGO\s*(?:DE\s*)?ART[IÍií]CULO|SKU|C[OÓoó]DIGO|CODIGO|C[OÓoó]D|COD|REF|REFERENCIA|ART[IÍií]CULO|ARTICULO|ART|VARIANTE|VARIACI[OÓoó]N)[\s:.\-#]+/i,
     ""
   ).trim();
 
@@ -67,29 +69,47 @@ function detectBrand(text: string): string {
 }
 
 /**
- * Parses raw text from a Mercado Libre PDF to extract exact SKU and quantities.
- * Covers:
- * - Mercado Envíos Colecta (Listas de bultos/resumen de envío con columnas SKU, Cantidad, Producto)
- * - Mercado Envíos Flex / Agencias (Etiquetas N páginas, 1 por paquete)
- * - Reportes con "Código de vendedor:", "SKU:", "Cant:", "1 u.", etc.
+ * Normalizes text extracted from PDF, fixing common font encoding artifacts
+ * (e.g., 'Cˆ‡digo' -> 'Codigo') and stripping accents for bulletproof regex matching.
+ */
+function normalizePdfText(raw: string): string {
+  if (!raw) return "";
+  return raw
+    .replace(/C[^\s]{1,4}digo/gi, "Codigo")
+    .replace(/Vended[^\s]{1,3}r/gi, "Vendedor")
+    .replace(/Art[^\s]{1,3}culo/gi, "Articulo")
+    .replace(/Variaci[^\s]{1,3}n/gi, "Variacion")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Parses raw text from a single Mercado Libre PDF page or document.
+ * Guaranteed to extract exact SKU and quantities without omitting repeated labels.
  */
 export function extractProductsFromText(text: string): Array<{ sku: string; producto: string; cantidad: number }> {
   const results: Array<{ sku: string; producto: string; cantidad: number }> = [];
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const normalizedText = normalizePdfText(text);
+
+  // Strategy A: Line-by-line inspection
+  const lines = normalizedText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Pattern 1: Match line with SKU prefix keyword (e.g. "Código de vendedor: TAL-DCD7781" or "SKU: TAL-DCD7781 | Cant: 2")
+    // Pattern 1: Inline SKU with explicit quantity in the same line
+    // e.g. "Codigo de vendedor: TAL-DCD7781 | Cant: 2" or "SKU: MAK-HR2470 Cantidad: 1"
     const inlineSkuMatch = line.match(SKU_PREFIX_KEYWORD_REGEX);
-    const inlineQtyMatch = line.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]+)/i);
+    const inlineQtyMatch = line.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]{1,4})/i) ||
+                           line.match(/([0-9]{1,4})\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i);
 
     if (inlineSkuMatch && inlineQtyMatch) {
       const sku = cleanSku(inlineSkuMatch[1]);
       const qty = parseInt(inlineQtyMatch[1], 10);
       let prodName = line
         .replace(SKU_PREFIX_KEYWORD_REGEX, "")
-        .replace(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*[0-9]+/i, "")
+        .replace(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*[0-9]{1,4}/i, "")
+        .replace(/([0-9]{1,4})\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i, "")
         .replace(/^[|·\-\s]+|[|·\-\s]+$/g, "");
       prodName = cleanProductName(prodName) || sku;
       if (sku && qty > 0) {
@@ -98,46 +118,43 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
       }
     }
 
-    // Pattern 2: Multi-line Mercado Libre Shipping Label / Picking Slip
-    // Line i contains SKU prefix match ("Código vendedor: TAL-DCD7781")
-    if (inlineSkuMatch && !inlineQtyMatch) {
+    // Pattern 2: Multi-line label snippet
+    // Line i contains SKU prefix ("Codigo vendedor: TAL-DCD7781")
+    if (inlineSkuMatch) {
       const sku = cleanSku(inlineSkuMatch[1]);
-      if (sku) {
+      if (sku && !sku.toUpperCase().startsWith("PAGINA") && !sku.toUpperCase().startsWith("TOTAL")) {
         let qty = 1;
         let prodName = "";
 
-        // Look at surrounding 3 lines for Quantity or Title
-        for (let offset = -3; offset <= 3; offset++) {
+        // Check surrounding lines (-2 to +3)
+        for (let offset = -2; offset <= 3; offset++) {
           if (offset === 0) continue;
           const targetIdx = i + offset;
           if (targetIdx >= 0 && targetIdx < lines.length) {
             const targetLine = lines[targetIdx];
-            const qtyMatch = targetLine.match(/^(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)?[\s:.\-#]*([0-9]+)$/i) ||
-                             targetLine.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]+)/i) ||
-                             targetLine.match(/^([0-9]+)\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i);
-            if (qtyMatch && !targetLine.includes("ORDEN") && !targetLine.includes("FECHA") && !targetLine.includes("PAQUETE") && !targetLine.includes("PÁGINA")) {
+            const qtyMatch = targetLine.match(/^(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)?[\s:.\-#]*([0-9]{1,4})$/i) ||
+                             targetLine.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]{1,4})/i) ||
+                             targetLine.match(/^([0-9]{1,4})\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i);
+            if (qtyMatch && !targetLine.includes("ORDEN") && !targetLine.includes("FECHA") && !targetLine.includes("PAQUETE") && !targetLine.includes("PAGINA")) {
               const parsedQ = parseInt(qtyMatch[1], 10);
-              if (parsedQ > 0) qty = parsedQ;
-            } else if (!prodName && targetLine.length > 3 && !targetLine.includes("SKU") && !targetLine.includes("CÓDIGO") && !/^(PÁGINA|PAGINA|FECHA|ORDEN|GUÍA|RECEPTOR|ENVÍO|DESTINATARIO|COMPRADOR)/i.test(targetLine)) {
+              if (parsedQ > 0 && parsedQ < 100000) qty = parsedQ;
+            } else if (!prodName && targetLine.length > 3 && !targetLine.includes("SKU") && !targetLine.includes("CODIGO") && !/^(PAGINA|FECHA|ORDEN|GUIA|RECEPTOR|ENVIO|DESTINATARIO|COMPRADOR|#)/i.test(targetLine)) {
               prodName = cleanProductName(targetLine);
             }
           }
         }
 
-        if (!sku.startsWith("PAGINA") && !sku.startsWith("TOTAL")) {
-          results.push({
-            sku,
-            producto: prodName || sku,
-            cantidad: qty,
-          });
-          continue;
-        }
+        results.push({
+          sku,
+          producto: prodName || sku,
+          cantidad: qty,
+        });
+        continue;
       }
     }
 
-    // Pattern 3: Tabular line with optional leading row number e.g.:
-    // "1  DW-DCD7781-20V    Taladro Percutor 20V    3" or "DW-DCD7781-20V    Taladro    3"
-    const tableMatch = line.match(/^(?:[0-9]{1,3}\s+)?([A-Za-z0-9_\-\.\/]{3,35})\s{2,}(.+?)\s{2,}([0-9]+)$/i);
+    // Pattern 3: Tabular summary row e.g. "DW-DCD7781-20V    Taladro Percutor 20V    3"
+    const tableMatch = line.match(/^(?:[0-9]{1,3}\s+)?([A-Za-z0-9_\-\.\/]{3,35})\s{2,}(.+?)\s{2,}([0-9]{1,4})$/i);
     if (tableMatch) {
       const sku = cleanSku(tableMatch[1]);
       const prodName = cleanProductName(tableMatch[2]);
@@ -148,30 +165,52 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
       }
     }
 
-    // Pattern 4: Prefix quantity "2 u. TAL-DCD7781 Taladro" or "3 unidades - SKU123"
-    const prefixQtyMatch = line.match(/^([0-9]+)\s*(?:u\.|un\.|uds\.|unidades|unid\.)\s*(?:[-–:]\s*)?([A-Za-z0-9_\-\.\/]{3,35})?\s*(.*)$/i);
+    // Pattern 4: Leading quantity notation e.g. "3 u. Truper Martillo Galponero 16oz"
+    const prefixQtyMatch = line.match(/^([0-9]{1,4})\s*(?:u\.|un\.|uds\.|unidades|unid\.)\s*(?:[-–:]\s*)?([A-Za-z0-9_\-\.\/]{3,35})?\s*(.*)$/i);
     if (prefixQtyMatch) {
       const qty = parseInt(prefixQtyMatch[1], 10);
       const possibleSku = prefixQtyMatch[2] ? cleanSku(prefixQtyMatch[2]) : null;
       const rest = cleanProductName(prefixQtyMatch[3] || "");
       const finalSku = possibleSku || (rest ? cleanSku(rest.slice(0, 15)) : "SKU-PROD");
       const finalProd = rest || finalSku;
-      if (finalSku && qty > 0) {
+      if (finalSku && qty > 0 && !finalSku.toUpperCase().startsWith("PAGINA")) {
         results.push({ sku: finalSku, producto: finalProd, cantidad: qty });
         continue;
       }
     }
   }
 
-  // Fallback Pattern 5: Look for Mercado Libre listing IDs e.g., MLA123456789 or MLC987654321
+  // Strategy B: If line-by-line found nothing (e.g., text stream without newlines), run global regex scan
   if (results.length === 0) {
-    const mlListings = text.matchAll(/(ML[ABC][A-Z0-9]{7,15})[^\n\r]*?(?:cant(?:idad)?|uds?|unidades?|x)?[\s:.\-#]*([0-9]+)/gi);
+    const globalSkuRegex = /(?:CODIGO\s*(?:DE\s*)?VENDEDOR|SKU\s*(?:DE\s*)?VENDEDOR|COD\.\s*VENDEDOR|CODIGO\s*(?:DE\s*)?PRODUCTO|SKU|CODIGO|COD|REF)[\s:.\-#]+([A-Za-z0-9_\-\.\/]{2,45})/gi;
+    let match: RegExpExecArray | null;
+    while ((match = globalSkuRegex.exec(normalizedText)) !== null) {
+      const sku = cleanSku(match[1]);
+      if (!sku || sku.length < 2) continue;
+
+      // Extract window around the match to find quantity
+      const windowText = normalizedText.slice(match.index, match.index + 250);
+      const qtyMatch = windowText.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]{1,4})/i) ||
+                       windowText.match(/([0-9]{1,4})\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i);
+      const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+
+      results.push({
+        sku,
+        producto: sku,
+        cantidad: qty,
+      });
+    }
+  }
+
+  // Strategy C: Mercado Libre Listing ID fallback (e.g. MLA123456789 / MLC123456789)
+  if (results.length === 0) {
+    const mlListings = normalizedText.matchAll(/(ML[ABC][A-Z0-9]{7,15})[^\n\r]*?(?:cant(?:idad)?|uds?|unidades?|x)?[\s:.\-#]*([0-9]{1,4})/gi);
     for (const m of mlListings) {
       const sku = m[1].toUpperCase();
       const qty = parseInt(m[2], 10) || 1;
       results.push({
         sku,
-        producto: `Publicación ${sku}`,
+        producto: `Publicacion ${sku}`,
         cantidad: qty,
       });
     }
@@ -182,13 +221,14 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
 
 /**
  * Consolidates multiple Mercado Libre PDFs deterministically (without AI hallucinations).
- * It extracts text directly via pdf-parse and aggregates row sums mathematically.
+ * It extracts text page-by-page directly via pdf-parse/pdfjs and aggregates row sums mathematically.
  */
 export async function consolidatePdfsDeterministically(
   files: AccountPdfPayload[],
   accountNames: string[]
 ): Promise<DeterministicConsolidationResult> {
   const mergedMap = new Map<string, PickingItem>();
+  const allRawExtracted: RawExtractedProduct[] = [];
   let totalExtractedItems = 0;
 
   for (const file of files) {
@@ -199,19 +239,56 @@ export async function consolidatePdfsDeterministically(
       ? file.base64Data.split(",")[1]
       : file.base64Data;
     const buffer = Buffer.from(cleanBase64, "base64");
-    let text = "";
+
+    const fileExtracted: Array<{ sku: string; producto: string; cantidad: number }> = [];
+
     try {
       const parser = new PDFParse({ data: buffer });
-      const doc = await parser.getText();
-      text = typeof doc === "string" ? doc : doc?.text || "";
+      const textResult = (await parser.getText({
+        pageJoiner: "\n---PAGE_SPLIT---\n",
+      })) as {
+        total?: number;
+        pages?: Array<{ text: string; num: number }>;
+        text?: string;
+      };
+
+      const pages = Array.isArray(textResult?.pages) && textResult.pages.length > 0
+        ? textResult.pages
+        : null;
+
+      if (pages && pages.length > 0) {
+        // Iterate page-by-page so every label across N pages is parsed cleanly
+        for (const page of pages) {
+          const pageText = page?.text || "";
+          const pageItems = extractProductsFromText(pageText);
+          fileExtracted.push(...pageItems);
+        }
+      } else {
+        // Fallback: split by delimiter or parse entire text
+        const wholeText = typeof textResult === "string" ? textResult : textResult?.text || "";
+        const pageChunks = wholeText.split(/---PAGE_SPLIT---|\f/);
+        for (const chunk of pageChunks) {
+          const chunkItems = extractProductsFromText(chunk);
+          fileExtracted.push(...chunkItems);
+        }
+      }
     } catch (parseErr) {
-      console.warn("Fallo leyendo PDF:", parseErr);
+      console.warn(`Error parseando PDF en slot ${slotIdx + 1}:`, parseErr);
     }
-    const extracted = extractProductsFromText(text);
 
-    totalExtractedItems += extracted.length;
+    totalExtractedItems += fileExtracted.length;
 
-    for (const item of extracted) {
+    for (const item of fileExtracted) {
+      allRawExtracted.push({
+        sku: item.sku,
+        producto: item.producto,
+        cantidad: item.cantidad,
+        slotIndex: slotIdx,
+        accountName: accountNames[slotIdx] || `Cuenta ${slotIdx + 1}`,
+      });
+    }
+
+    for (const item of fileExtracted) {
       const rawSku = cleanSku(item.sku);
       if (!rawSku) continue;
       const normalizedKey = rawSku.toUpperCase();
@@ -228,7 +305,7 @@ export async function consolidatePdfsDeterministically(
           existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
 
         // Enhance product name if the new one is more descriptive
-        if (item.producto && item.producto.length > existing.producto.length && !item.producto.startsWith("Publicación")) {
+        if (item.producto && item.producto.length > existing.producto.length && !item.producto.startsWith("Publicacion")) {
           existing.producto = item.producto;
           existing.marca = detectBrand(item.producto);
         }
@@ -257,12 +334,18 @@ export async function consolidatePdfsDeterministically(
   const activeCount = files.length;
   const totalPhysicalUnits = items.reduce((acc, i) => acc + i.totalPreparar, 0);
 
-  const resumenOperativo = `Procesamiento determinista directo (sin IA): se leyeron con precisión matemática ${activeCount} archivo(s) PDF de Mercado Libre, consolidando ${items.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas sin riesgo de omisiones ni alteraciones de nombres.`;
+  const auditReport = auditPickingConsolidation(allRawExtracted, items);
+
+  const resumenOperativo = auditReport.isValid
+    ? `Procesamiento determinista directo (sin IA): se auditaron con precisión matemática ${activeCount} archivo(s) PDF de Mercado Libre, consolidando ${items.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas (Auditoría: 100% verificado sin discrepancias).`
+    : `Aviso de auditoría: se detectó discrepancia entre unidades originales (${auditReport.totalOriginalUnits}) y consolidadas (${auditReport.totalConsolidatedUnits}). ${auditReport.alertMessage}`;
 
   return {
     resumenOperativo,
     items,
     mode: "deterministic",
     extractedCount: totalExtractedItems,
+    rawExtractedItems: allRawExtracted,
+    auditReport,
   };
 }

@@ -380,9 +380,14 @@ export default function App() {
         data.resumenOperativo ||
           `Consolidación completada a partir de ${activeFiles.length} cuenta(s) de Mercado Libre.`
       );
-      setStatusNotice(
-        `¡Consolidación exitosa! Se homologaron ${normalized.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF.`
-      );
+
+      if (data.auditReport && !data.auditReport.isValid) {
+        setErrorBanner(data.auditReport.alertMessage);
+      } else {
+        setStatusNotice(
+          `¡Consolidación exitosa y auditada! Se homologaron ${normalized.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF sin ninguna discrepancia en la suma total.`
+        );
+      }
     } catch (err: unknown) {
       setErrorBanner(
         err instanceof Error

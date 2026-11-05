@@ -154,3 +154,98 @@ Cant: 4 | SKU: STA-STHT7088 | Juego Destornilladores Stanley
   const truper = extracted.find((i) => i.cantidad === 3);
   assert.ok(truper);
 });
+
+test("auditPickingConsolidation compares original vs consolidated units and alerts on discrepancies", async () => {
+  const { auditPickingConsolidation } = await import("./pickingLogic");
+
+  const rawOriginals = [
+    { sku: "SKU-A", cantidad: 36, slotIndex: 0 },
+    { sku: "SKU-A", cantidad: 6, slotIndex: 1 },
+    { sku: "SKU-B", cantidad: 10, slotIndex: 0 },
+  ];
+
+  // Case 1: Perfect match (36 + 6 = 42 for SKU-A, 10 for SKU-B)
+  const validConsolidated: PickingItem[] = [
+    {
+      id: "1",
+      sku: "SKU-A",
+      producto: "Prod A",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 36,
+      cta2: 6,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 42,
+      preparado: false,
+    },
+    {
+      id: "2",
+      sku: "SKU-B",
+      producto: "Prod B",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 10,
+      cta2: 0,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 10,
+      preparado: false,
+    },
+  ];
+
+  const reportValid = auditPickingConsolidation(rawOriginals, validConsolidated);
+  assert.equal(reportValid.isValid, true);
+  assert.equal(reportValid.totalOriginalUnits, 52);
+  assert.equal(reportValid.totalConsolidatedUnits, 52);
+  assert.equal(reportValid.discrepancies.length, 0);
+  assert.equal(reportValid.alertMessage, null);
+
+  // Case 2: Discrepancy (e.g. only 30 counted for SKU-A instead of 42)
+  const flawedConsolidated: PickingItem[] = [
+    {
+      id: "1",
+      sku: "SKU-A",
+      producto: "Prod A",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 30,
+      cta2: 0,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 30,
+      preparado: false,
+    },
+    {
+      id: "2",
+      sku: "SKU-B",
+      producto: "Prod B",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 10,
+      cta2: 0,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 10,
+      preparado: false,
+    },
+  ];
+
+  const reportFlawed = auditPickingConsolidation(rawOriginals, flawedConsolidated);
+  assert.equal(reportFlawed.isValid, false);
+  assert.equal(reportFlawed.totalOriginalUnits, 52);
+  assert.equal(reportFlawed.totalConsolidatedUnits, 40);
+  assert.equal(reportFlawed.discrepancies.length, 1);
+  assert.equal(reportFlawed.discrepancies[0].sku, "SKU-A");
+  assert.equal(reportFlawed.discrepancies[0].expectedUnits, 42);
+  assert.equal(reportFlawed.discrepancies[0].consolidatedUnits, 30);
+  assert.ok(reportFlawed.alertMessage?.includes("Alerta de discrepancia"));
+});

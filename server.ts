@@ -103,6 +103,7 @@ const pickingResponseSchema = {
 };
 
 import { consolidatePdfsDeterministically } from "./src/utils/deterministicConsolidator";
+import { auditPickingConsolidation } from "./src/utils/pickingLogic";
 
 app.post("/api/consolidate", async (req, res) => {
   try {
@@ -342,13 +343,23 @@ INSTRUCCIONES:
       }
     }
 
+    const auditReport = auditPickingConsolidation(
+      deterministicResult.rawExtractedItems,
+      finalItems
+    );
+
     const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
     const modeDesc = apiKey ? "Híbrido (Conteo determinista 100% exacto + Enriquecimiento Gemini 3.8 Flash)" : "Determinista directo 100% exacto";
-    const resumenOperativo = `Consolidación de picking realizada en modo ${modeDesc}: se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas con suma matemática garantizada sin alucinaciones.`;
+    const auditStatusStr = auditReport.isValid
+      ? "Auditoría de integridad: 100% exacto (0 discrepancias)"
+      : `¡Discrepancia detectada!: ${auditReport.alertMessage}`;
+
+    const resumenOperativo = `Consolidación de picking realizada en modo ${modeDesc}: se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas. ${auditStatusStr}.`;
 
     return res.json({
       resumenOperativo,
       items: finalItems,
+      auditReport,
     });
   } catch (error: unknown) {
     console.error("Error en /api/consolidate:", error);

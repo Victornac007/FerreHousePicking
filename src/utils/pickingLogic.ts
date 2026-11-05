@@ -292,4 +292,101 @@ export function generatePickingCsvWithBom(
   return BOM + rows.join("\r\n");
 }
 
+export interface RawExtractedProduct {
+  sku: string;
+  producto?: string;
+  cantidad: number;
+  slotIndex?: number; // 0 to 4
+  accountName?: string;
+}
+
+export interface SkuDiscrepancy {
+  sku: string;
+  expectedUnits: number;
+  consolidatedUnits: number;
+  diff: number;
+}
+
+export interface PickingAuditReport {
+  isValid: boolean;
+  totalOriginalUnits: number;
+  totalConsolidatedUnits: number;
+  totalOriginalUniqueSkus: number;
+  totalConsolidatedUniqueSkus: number;
+  discrepancies: SkuDiscrepancy[];
+  alertMessage: string | null;
+}
+
+/**
+ * Compares the total product units and SKU occurrences between the raw items
+ * extracted from original incoming documents and the final consolidated items list.
+ * Alerts if any discrepancy exists in total units or individual SKU sums.
+ */
+export function auditPickingConsolidation(
+  originalRawItems: RawExtractedProduct[],
+  consolidatedItems: PickingItem[]
+): PickingAuditReport {
+  const originalMap = new Map<string, number>();
+  let totalOriginalUnits = 0;
+
+  for (const raw of originalRawItems) {
+    const rawSku = (raw.sku || "").trim();
+    if (!rawSku) continue;
+    const normKey = rawSku.toUpperCase();
+    const qty = Math.max(0, Math.round(Number(raw.cantidad) || 0));
+    if (qty <= 0) continue;
+
+    totalOriginalUnits += qty;
+    originalMap.set(normKey, (originalMap.get(normKey) || 0) + qty);
+  }
+
+  const consolidatedMap = new Map<string, number>();
+  let totalConsolidatedUnits = 0;
+
+  for (const item of consolidatedItems) {
+    const rawSku = (item.sku || "").trim();
+    if (!rawSku) continue;
+    const normKey = rawSku.toUpperCase();
+    const qty = Math.max(0, Math.round(Number(item.totalPreparar) || 0));
+
+    totalConsolidatedUnits += qty;
+    consolidatedMap.set(normKey, (consolidatedMap.get(normKey) || 0) + qty);
+  }
+
+  const discrepancies: SkuDiscrepancy[] = [];
+  const allSkus = new Set([...originalMap.keys(), ...consolidatedMap.keys()]);
+
+  for (const skuKey of allSkus) {
+    const expected = originalMap.get(skuKey) || 0;
+    const consolidated = consolidatedMap.get(skuKey) || 0;
+    if (expected !== consolidated) {
+      discrepancies.push({
+        sku: skuKey,
+        expectedUnits: expected,
+        consolidatedUnits: consolidated,
+        diff: consolidated - expected,
+      });
+    }
+  }
+
+  const isValid = discrepancies.length === 0 && totalOriginalUnits === totalConsolidatedUnits;
+  let alertMessage: string | null = null;
+
+  if (!isValid) {
+    const diffTotal = totalConsolidatedUnits - totalOriginalUnits;
+    const affectedSkus = discrepancies.map((d) => `${d.sku} (Esperado: ${d.expectedUnits}, Obtenido: ${d.consolidatedUnits})`).join(", ");
+    alertMessage = `¡Alerta de discrepancia en auditoría! Se detectó una diferencia de ${Math.abs(diffTotal)} unidades en la suma total (Original: ${totalOriginalUnits} vs Consolidado: ${totalConsolidatedUnits}). SKUs con diferencias: ${affectedSkus}.`;
+  }
+
+  return {
+    isValid,
+    totalOriginalUnits,
+    totalConsolidatedUnits,
+    totalOriginalUniqueSkus: originalMap.size,
+    totalConsolidatedUniqueSkus: consolidatedMap.size,
+    discrepancies,
+    alertMessage,
+  };
+}
+
 
