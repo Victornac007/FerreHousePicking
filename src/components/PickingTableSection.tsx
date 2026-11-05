@@ -84,17 +84,9 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
       {/* Cabecera Operativa y Botones de Exportación / Impresión (Oculto en papel) */}
       <div className="no-print flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-              2. Planilla Maestra de Consolidación y Picking
-            </h2>
-            {items.length > 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                Auditoría Matemática Verificada 100%
-              </span>
-            )}
-          </div>
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+            2. Planilla Maestra de Consolidación y Picking
+          </h2>
           {resumenOperativo ? (
             <p className="text-xs text-slate-600 mt-1 max-w-3xl">
               {resumenOperativo}
@@ -232,13 +224,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
 
       {/* Estado Vacío si no hay ítems */}
       {items.length === 0 ? (
-        <div className="no-print mt-6 py-10 px-4 border border-dashed border-slate-200 rounded-xl text-center max-w-xl mx-auto">
-          {resumenOperativo && (
-            <div className="mb-4 p-3.5 bg-blue-50/90 border border-blue-200 rounded-lg text-xs font-medium text-slate-800 text-left">
-              <span className="font-bold text-[#2d3277] block mb-1">Último reporte de escaneo:</span>
-              <span>{resumenOperativo}</span>
-            </div>
-          )}
+        <div className="no-print mt-6 py-14 px-4 border border-dashed border-slate-200 rounded-xl text-center max-w-xl mx-auto">
           <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center mx-auto mb-3">
             <PackageOpen className="w-6 h-6" />
           </div>
@@ -261,11 +247,10 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => onToggleSort("sku")}
-                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold text-[#2d3277]"
-                    title="Ordenar por Código de SKU Original"
+                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold"
                   >
-                    <span>SKU Original</span>
-                    <ArrowUpDown className="w-3 h-3 no-print text-slate-500" />
+                    <span>SKU</span>
+                    <ArrowUpDown className="w-3 h-3 no-print" />
                   </button>
                 </th>
                 <th className="py-3 px-3 min-w-[200px] print:w-auto print:px-1.5">
@@ -354,18 +339,17 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         />
                       </td>
 
-                      {/* Columna 2: SKU Original de Producto */}
+                      {/* Columna 2: SKU / Código */}
                       <td className="py-3 px-3 print:py-1 print:px-1.5 align-middle">
-                        <span
-                          title={`SKU Original: ${item.sku}`}
-                          className={`font-mono-tabular font-black text-xs print:text-[7.5pt] print:leading-tight break-all inline-block px-2 py-0.5 rounded border ${
+                        <div
+                          className={`font-mono-tabular font-bold text-xs print:text-[7pt] print:leading-tight break-all ${
                             item.preparado
-                              ? "line-through text-slate-400 bg-slate-100 border-slate-200"
-                              : "text-[#2d3277] bg-slate-100/90 border-slate-300 shadow-2xs"
+                              ? "line-through text-slate-500"
+                              : "text-slate-900"
                           }`}
                         >
                           {item.sku}
-                        </span>
+                        </div>
                       </td>
 
                       {/* Columna 3: Producto, Marca y Modelo */}

@@ -15,7 +15,6 @@ import {
   calculatePickingKPIs,
   filterAndSortPickingItems,
   generatePickingCsvWithBom,
-  parsePdfLocally,
 } from "./utils/pickingLogic";
 import { AccountUploadSection } from "./components/AccountUploadSection";
 import { KpiSummaryStrip } from "./components/KpiSummaryStrip";
@@ -337,7 +336,7 @@ export default function App() {
     setStatusNotice("Archivos PDF removidos de las 5 ranuras.");
   };
 
-  const handleConsolidateLocally = async () => {
+  const handleConsolidateWithGemini = async () => {
     const activeFiles = slots.filter((s) => s.base64Data !== null);
     if (activeFiles.length === 0) {
       setErrorBanner(
@@ -351,65 +350,39 @@ export default function App() {
     setStatusNotice(null);
 
     try {
-      // 1. Extracción local con pdfjs-dist en el navegador sin dependencias de API externa
-      const localResult = await parsePdfLocally(slots, accountNames);
+      const response = await fetch("/api/consolidate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountNames: slots.map((s) => s.name),
+          files: activeFiles.map((s) => ({
+            slotIndex: s.index,
+            accountName: s.name,
+            fileName: s.fileName || `Cuenta_${s.index + 1}.pdf`,
+            base64Data: s.base64Data,
+            mimeType: s.mimeType || "application/pdf",
+          })),
+        }),
+      });
 
-      if (localResult.items.length > 0) {
-        setItems(localResult.items);
-        setResumenOperativo(localResult.resumenOperativo);
-
-        if (!localResult.auditReport.isValid) {
-          setErrorBanner(localResult.auditReport.alertMessage);
-        } else {
-          setStatusNotice(
-            `¡Consolidación local exitosa y auditada! Se homologaron ${localResult.items.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF sin ninguna discrepancia en la suma total.`
-          );
-        }
-      } else {
-        // Fallback local en backend Node.js (100% determinista)
-        const response = await fetch("/api/consolidate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            accountNames: slots.map((s) => s.name),
-            files: activeFiles.map((s) => ({
-              slotIndex: s.index,
-              accountName: s.name,
-              fileName: s.fileName || `Cuenta_${s.index + 1}.pdf`,
-              base64Data: s.base64Data,
-              mimeType: s.mimeType || "application/pdf",
-            })),
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(
-            data.error || "Error al procesar los PDFs en el servidor."
-          );
-        }
-
-        const normalized = normalizePickingItems(data.items || []);
-        setItems(normalized);
-        setResumenOperativo(
-          data.resumenOperativo ||
-            `Consolidación completada a partir de ${activeFiles.length} cuenta(s) de Mercado Libre.`
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Error al procesar los PDFs en el servidor."
         );
-
-        if (data.auditReport && !data.auditReport.isValid) {
-          setErrorBanner(data.auditReport.alertMessage);
-        } else if (normalized.length === 0) {
-          setErrorBanner(
-            `Atención: No se detectaron códigos de producto (SKUs) en los ${activeFiles.length} archivo(s) PDF subidos. Verifica que los archivos contengan texto seleccionable o etiquetas con 'Código de vendedor' o 'SKU'.`
-          );
-        } else {
-          setStatusNotice(
-            `¡Consolidación exitosa y auditada! Se homologaron ${normalized.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF sin discrepancias.`
-          );
-        }
       }
+
+      const normalized = normalizePickingItems(data.items || []);
+      setItems(normalized);
+      setResumenOperativo(
+        data.resumenOperativo ||
+          `Consolidación completada a partir de ${activeFiles.length} cuenta(s) de Mercado Libre.`
+      );
+      setStatusNotice(
+        `¡Consolidación exitosa! Se homologaron ${normalized.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF.`
+      );
     } catch (err: unknown) {
       setErrorBanner(
         err instanceof Error
@@ -653,7 +626,7 @@ export default function App() {
           onUploadBatchFiles={handleUploadBatchFiles}
           onRemoveSlotFile={handleRemoveSlotFile}
           onClearAllFiles={handleClearAllFiles}
-          onConsolidateLocally={handleConsolidateLocally}
+          onConsolidateWithGemini={handleConsolidateWithGemini}
         />
 
         {/* Sección 2: Tarjetas de Resumen Superior (KPIs) */}
@@ -704,7 +677,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modal interactivo de progreso de escaneo local */}
+      {/* Modal interactivo de progreso de escaneo con Gemini 3.6 Flash */}
       <ScanProgressModal isProcessing={isProcessing} slots={slots} />
 
       {/* Modal para agregar o sumar un producto manualmente */}
