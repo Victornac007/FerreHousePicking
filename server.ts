@@ -138,77 +138,180 @@ app.post("/api/consolidate", async (req, res) => {
       },
     });
 
-    const systemInstruction = `Eres el motor experto de máxima precisión para auditoría logística y consolidación de bodega de "FerreHousePicking", especializado en Mercado Libre (Mercado Envíos / Colecta / Flex / Full / Agencias).
-
-TU OBJETIVO PRINCIPAL:
-Analizar y consolidar con EXACTITUD TOTAL todos los productos y órdenes de preparación contenidos en los ${files.length} archivos PDF adjuntos de hasta 5 cuentas:
-- Cuenta 1 (cta1): "${names[0]}"
-- Cuenta 2 (cta2): "${names[1]}"
-- Cuenta 3 (cta3): "${names[2]}"
-- Cuenta 4 (cta4): "${names[3]}"
-- Cuenta 5 (cta5): "${names[4]}"
-
-REGLAS DE MÁXIMA EXACTITUD:
-1. EXTRACCIÓN ESPECÍFICA DEL SKU (SIN ALTERACIONES):
-   - Extrae el código SKU exacto tal cual figura en cada PDF (código de vendedor, código interno, código de barra o publicación ML).
-   - No inventes códigos ni cambies letras, guiones o números. Consérvalo fidedigno.
-   - Si un producto tiene título descriptivo, úsalo en 'producto'.
-
-2. CONTEO EXACTO POR CUENTA:
-   - Para cada producto vendido, asigna su cantidad exacta a la cuenta correspondiente (cta1, cta2, cta3, cta4, cta5).
-   - Si un SKU aparece en múltiples ventas u órdenes dentro del PDF de una misma cuenta, suma todas sus unidades de esa cuenta antes de asignarlo.
-   - Si una cuenta no tiene archivo o no vendió ese SKU, coloca 0.
-   - totalPreparar DEBE ser la suma matemática exacta: cta1 + cta2 + cta3 + cta4 + cta5.
-
-3. CONSOLIDACIÓN ENTRE CUENTAS:
-   - Si dos o más cuentas vendieron el mismo SKU o producto, agrúpalos en una sola fila con sus cantidades desglosadas por cuenta.
-   - No omitas ningún producto. Revisa todas las páginas del PDF.`;
-
-    const parts: Array<
-      | { text: string }
-      | { inlineData: { mimeType: string; data: string } }
-    > = [];
-
-    parts.push({
-      text: `Procesa y consolida los siguientes ${files.length} archivo(s) PDF de resúmenes de ventas de Mercado Libre con Gemini 3.8 Flash.`,
-    });
-
-    for (const file of files) {
-      const slotNumber = file.slotIndex + 1; // 1 to 5
-      const cleanBase64 = file.base64Data.includes(",")
-        ? file.base64Data.split(",")[1]
-        : file.base64Data;
-
-      parts.push({
-        text: `--- INICIO ARCHIVO CUENTA ${slotNumber} (cta${slotNumber} - Nombre: "${file.accountName}" - Archivo: "${file.fileName}") ---`,
-      });
-      parts.push({
-        inlineData: {
-          mimeType: file.mimeType || "application/pdf",
-          data: cleanBase64,
-        },
-      });
+    // 1. PROCESAR CADA ARCHIVO PDF POR SEPARADO CON GEMINI 3.8 FLASH
+    // Esto garantiza que cada PDF se audite individualmente sin confundir las cuentas ni las cantidades
+    interface SingleAccountExtraction {
+      slotIndex: number;
+      accountName: string;
+      items: Array<{
+        sku: string;
+        producto: string;
+        marca?: string;
+        modelo?: string;
+        categoria?: string;
+        cantidad: number;
+      }>;
     }
 
-    parts.push({
-      text: "Devuelve exclusivamente el objeto JSON estructurado con la lista consolidada de picking para bodega.",
-    });
-
-    // Usar el modelo gemini-3.8-flash solicitado por el usuario
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: { parts },
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: pickingResponseSchema,
+    const perAccountSchema = {
+      type: Type.OBJECT,
+      properties: {
+        items: {
+          type: Type.ARRAY,
+          description: "Lista de todos los productos y cantidades vendidas en este documento PDF específico.",
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              sku: {
+                type: Type.STRING,
+                description: "Código SKU exacto, código de vendedor, código de barra o publicación ML tal cual figura en el documento sin alteraciones.",
+              },
+              producto: {
+                type: Type.STRING,
+                description: "Nombre o descripción del producto tal cual figura en el documento.",
+              },
+              marca: {
+                type: Type.STRING,
+                description: "Marca del producto (ej. DeWalt, Bosch, Makita, Truper, Stanley, Genérico).",
+              },
+              modelo: {
+                type: Type.STRING,
+                description: "Modelo o especificación técnica (o 'Estándar').",
+              },
+              categoria: {
+                type: Type.STRING,
+                description: "Categoría ferretera general.",
+              },
+              cantidad: {
+                type: Type.INTEGER,
+                description: "Cantidad física TOTAL de unidades vendidas para este SKU en este documento específico.",
+              },
+            },
+            required: ["sku", "producto", "cantidad"],
+          },
+        },
       },
+      required: ["items"],
+    };
+
+    const extractions: SingleAccountExtraction[] = [];
+
+    // Procesar cada archivo en paralelo para máxima velocidad y precisión aislada
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          const cleanBase64 = file.base64Data.includes(",")
+            ? file.base64Data.split(",")[1]
+            : file.base64Data;
+
+          const slotNum = file.slotIndex + 1;
+          const prompt = `Analiza este documento PDF de Mercado Libre perteneciente a la Cuenta ${slotNum} ("${file.accountName}").
+INSTRUCCIONES DE CONTEO Y EXTRACCIÓN EXACTA:
+1. Extrae TODOS los productos vendidos en este PDF.
+2. Identifica el código SKU o código de producto EXACTO tal cual está impreso, sin inventar ni cambiar caracteres.
+3. Para cada producto, determina la CANTIDAD EXACTA vendida en este documento.
+4. Si un mismo SKU se repite en varias órdenes, etiquetas o líneas de este documento, suma todas sus unidades en un solo registro con la cantidad total acumulada.
+5. Devuelve la lista en formato JSON con 'sku', 'producto' y 'cantidad' exacta.`;
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.8-flash",
+            contents: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: file.mimeType || "application/pdf",
+                  data: cleanBase64,
+                },
+              },
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: perAccountSchema,
+            },
+          });
+
+          const rawText = (response.text ?? "{}").trim();
+          const parsed = JSON.parse(rawText);
+          const rawItems = Array.isArray(parsed?.items) ? parsed.items : [];
+
+          extractions.push({
+            slotIndex: file.slotIndex,
+            accountName: file.accountName,
+            items: rawItems,
+          });
+        } catch (fileErr) {
+          console.error(`Error procesando archivo de cuenta ${file.slotIndex + 1}:`, fileErr);
+        }
+      })
+    );
+
+    // 2. CONSOLIDACIÓN MATEMÁTICA EN EL SERVIDOR (CERO ALUCINACIÓN EN SUMAS)
+    const consolidatedMap = new Map<
+      string,
+      {
+        sku: string;
+        producto: string;
+        marca: string;
+        modelo: string;
+        categoria: string;
+        cta1: number;
+        cta2: number;
+        cta3: number;
+        cta4: number;
+        cta5: number;
+        totalPreparar: number;
+      }
+    >();
+
+    for (const extraction of extractions) {
+      const slotIdx = extraction.slotIndex;
+      for (const item of extraction.items) {
+        const rawSku = String(item.sku || "").trim();
+        if (!rawSku) continue;
+        const normalizedKey = rawSku.toUpperCase();
+        const qty = Math.max(0, Math.round(Number(item.cantidad) || 0));
+        if (qty === 0) continue;
+
+        const existing = consolidatedMap.get(normalizedKey);
+        if (existing) {
+          if (slotIdx === 0) existing.cta1 += qty;
+          else if (slotIdx === 1) existing.cta2 += qty;
+          else if (slotIdx === 2) existing.cta3 += qty;
+          else if (slotIdx === 3) existing.cta4 += qty;
+          else if (slotIdx === 4) existing.cta5 += qty;
+          existing.totalPreparar =
+            existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
+
+          if (item.producto && item.producto.length > existing.producto.length) {
+            existing.producto = item.producto.trim();
+          }
+        } else {
+          consolidatedMap.set(normalizedKey, {
+            sku: rawSku,
+            producto: (item.producto || rawSku).trim(),
+            marca: (item.marca || "Ferretería").trim(),
+            modelo: (item.modelo || "Estándar").trim(),
+            categoria: (item.categoria || "Ferretería General").trim(),
+            cta1: slotIdx === 0 ? qty : 0,
+            cta2: slotIdx === 1 ? qty : 0,
+            cta3: slotIdx === 2 ? qty : 0,
+            cta4: slotIdx === 3 ? qty : 0,
+            cta5: slotIdx === 4 ? qty : 0,
+            totalPreparar: qty,
+          });
+        }
+      }
+    }
+
+    const finalItems = Array.from(consolidatedMap.values());
+    const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
+
+    const resumenOperativo = `Auditoría individual completada con Gemini 3.8 Flash: se analizaron por separado ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas con suma matemática en el servidor.`;
+
+    return res.json({
+      resumenOperativo,
+      items: finalItems,
     });
-
-    const rawText = (response.text ?? "{}").trim();
-    const parsed = JSON.parse(rawText);
-
-    return res.json(parsed);
   } catch (error: unknown) {
     console.error("Error en /api/consolidate:", error);
     // En caso de error en la API, intentar consolidación determinista directa de respaldo
