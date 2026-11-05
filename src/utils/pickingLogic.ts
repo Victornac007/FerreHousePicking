@@ -488,6 +488,7 @@ export async function parsePdfLocally(
         accountName: names[slotIdx] || `Cuenta ${slotIdx + 1}`,
       });
 
+      // Strict SKU extraction & normalization for 100% unique grouping
       const rawSku = cleanSku(item.sku);
       if (!rawSku) continue;
       const normalizedKey = rawSku.toUpperCase();
@@ -503,6 +504,7 @@ export async function parsePdfLocally(
         existing.totalPreparar =
           existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
 
+        // Enhance product title if longer / more descriptive
         if (item.producto && item.producto.length > existing.producto.length) {
           existing.producto = item.producto;
           existing.marca = detectBrand(item.producto);
@@ -534,7 +536,7 @@ export async function parsePdfLocally(
   const totalPhysicalUnits = items.reduce((acc, i) => acc + i.totalPreparar, 0);
 
   const resumenOperativo = auditReport.isValid
-    ? `Consolidación de picking realizada en modo Local (pdfjs-dist): se procesaron ${activeSlots.length} archivo(s) PDF de Mercado Libre, consolidando ${items.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas con auditoría 100% verificado sin discrepancias.`
+    ? `Consolidación por SKU (Regex Estricto + pdfjs-dist): se procesaron ${activeSlots.length} archivo(s) PDF de Mercado Libre, clasificando de forma independiente ${items.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas totales con auditoría 100% exacta.`
     : `Aviso de auditoría: se detectó discrepancia entre unidades originales (${auditReport.totalOriginalUnits}) y consolidadas (${auditReport.totalConsolidatedUnits}). ${auditReport.alertMessage}`;
 
   return {
