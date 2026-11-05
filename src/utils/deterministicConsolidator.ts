@@ -216,6 +216,43 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
     }
   }
 
+  // Strategy D: Standalone SKU candidate lines e.g. "BOS-GWS850-45" or "TAL-DCD7781" without explicit prefix
+  if (results.length === 0) {
+    const candidateLines = normalizedText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    for (let i = 0; i < candidateLines.length; i++) {
+      const line = candidateLines[i];
+      const standaloneSkuMatch = line.match(/^([A-Za-z0-9_\-\.\/]{4,35})$/);
+      if (
+        standaloneSkuMatch &&
+        !/^(DESTINATARIO|DIRECCION|PRODUCTO|CATEGORIA|SANTIAGO|PROVINCIA|REGION|PAQUETE|FECHA|ORDEN|GUIA|ENVIO|RECEPTOR|COMPRADOR|COLECTA|MERCADO|ENVIOS|RESUMEN|PAGINA|TOTAL)/i.test(line)
+      ) {
+        const rawSku = cleanSku(standaloneSkuMatch[1]);
+        if (rawSku && rawSku.length >= 3) {
+          // Look for quantity in surrounding lines
+          let qty = 1;
+          for (let offset = -2; offset <= 2; offset++) {
+            if (offset === 0) continue;
+            const targetIdx = i + offset;
+            if (targetIdx >= 0 && targetIdx < candidateLines.length) {
+              const targetLine = candidateLines[targetIdx];
+              const qMatch = targetLine.match(/^([0-9]{1,4})\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i) ||
+                             targetLine.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]{1,4})/i);
+              if (qMatch) {
+                const parsedQ = parseInt(qMatch[1], 10);
+                if (parsedQ > 0 && parsedQ < 10000) qty = parsedQ;
+              }
+            }
+          }
+          results.push({
+            sku: rawSku,
+            producto: rawSku,
+            cantidad: qty,
+          });
+        }
+      }
+    }
+  }
+
   return results;
 }
 

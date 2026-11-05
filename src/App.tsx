@@ -383,6 +383,10 @@ export default function App() {
 
       if (data.auditReport && !data.auditReport.isValid) {
         setErrorBanner(data.auditReport.alertMessage);
+      } else if (normalized.length === 0) {
+        setErrorBanner(
+          `Atención: No se detectaron códigos de producto (SKUs) en los ${activeFiles.length} archivo(s) PDF subidos. Verifica que los archivos contengan texto seleccionable o etiquetas con 'Código de vendedor', 'SKU' o listas de bultos. También puedes agregar los productos directamente con el botón 'Agregar SKU Manual'.`
+        );
       } else {
         setStatusNotice(
           `¡Consolidación exitosa y auditada! Se homologaron ${normalized.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF sin ninguna discrepancia en la suma total.`

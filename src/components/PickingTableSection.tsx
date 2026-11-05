@@ -232,7 +232,13 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
 
       {/* Estado Vacío si no hay ítems */}
       {items.length === 0 ? (
-        <div className="no-print mt-6 py-14 px-4 border border-dashed border-slate-200 rounded-xl text-center max-w-xl mx-auto">
+        <div className="no-print mt-6 py-10 px-4 border border-dashed border-slate-200 rounded-xl text-center max-w-xl mx-auto">
+          {resumenOperativo && (
+            <div className="mb-4 p-3.5 bg-blue-50/90 border border-blue-200 rounded-lg text-xs font-medium text-slate-800 text-left">
+              <span className="font-bold text-[#2d3277] block mb-1">Último reporte de escaneo:</span>
+              <span>{resumenOperativo}</span>
+            </div>
+          )}
           <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center mx-auto mb-3">
             <PackageOpen className="w-6 h-6" />
           </div>
