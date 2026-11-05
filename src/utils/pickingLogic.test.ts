@@ -118,3 +118,152 @@ test("generatePickingCsvWithBom outputs UTF-8 BOM and semicolon-separated rows f
   assert.ok(lines[1].includes("DW-DCD7781-20V"));
   assert.ok(lines[3].startsWith("TOTALES BODEGA;"));
 });
+
+test("extractProductsFromText extracts exact SKUs and quantities from Mercado Libre patterns", async () => {
+  const { extractProductsFromText } = await import("./deterministicConsolidator");
+
+  const sampleMLReport = `
+ORDEN DE PREPARACIÓN DE ENVÍO MERCADO ENVÍOS
+FECHA: 2026-11-04
+1  DW-DCD7781-20V    Taladro Percutor Inalámbrico DeWalt 20V    3
+2  BOS-GWS850-45     Esmeril Angular Bosch 850W 4.5 pulg        5
+SKU: MAK-HR2470 | Cantidad: 2 | Rotomartillo SDS Plus Makita
+Cant: 4 | SKU: STA-STHT7088 | Juego Destornilladores Stanley
+3 u. Truper Martillo Galponero 16oz
+`;
+
+  const extracted = extractProductsFromText(sampleMLReport);
+  assert.equal(extracted.length, 5);
+
+  const dewalt = extracted.find((i) => i.sku === "DW-DCD7781-20V");
+  assert.ok(dewalt);
+  assert.equal(dewalt.cantidad, 3);
+
+  const bosch = extracted.find((i) => i.sku === "BOS-GWS850-45");
+  assert.ok(bosch);
+  assert.equal(bosch.cantidad, 5);
+
+  const makita = extracted.find((i) => i.sku === "MAK-HR2470");
+  assert.ok(makita);
+  assert.equal(makita.cantidad, 2);
+
+  const stanley = extracted.find((i) => i.sku === "STA-STHT7088");
+  assert.ok(stanley);
+  assert.equal(stanley.cantidad, 4);
+
+  const truper = extracted.find((i) => i.cantidad === 3);
+  assert.ok(truper);
+});
+
+test("auditPickingConsolidation compares original vs consolidated units and alerts on discrepancies", async () => {
+  const { auditPickingConsolidation } = await import("./pickingLogic");
+
+  const rawOriginals = [
+    { sku: "SKU-A", cantidad: 36, slotIndex: 0 },
+    { sku: "SKU-A", cantidad: 6, slotIndex: 1 },
+    { sku: "SKU-B", cantidad: 10, slotIndex: 0 },
+  ];
+
+  // Case 1: Perfect match (36 + 6 = 42 for SKU-A, 10 for SKU-B)
+  const validConsolidated: PickingItem[] = [
+    {
+      id: "1",
+      sku: "SKU-A",
+      producto: "Prod A",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 36,
+      cta2: 6,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 42,
+      preparado: false,
+    },
+    {
+      id: "2",
+      sku: "SKU-B",
+      producto: "Prod B",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 10,
+      cta2: 0,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 10,
+      preparado: false,
+    },
+  ];
+
+  const reportValid = auditPickingConsolidation(rawOriginals, validConsolidated);
+  assert.equal(reportValid.isValid, true);
+  assert.equal(reportValid.totalOriginalUnits, 52);
+  assert.equal(reportValid.totalConsolidatedUnits, 52);
+  assert.equal(reportValid.discrepancies.length, 0);
+  assert.equal(reportValid.alertMessage, null);
+
+  // Case 2: Discrepancy (e.g. only 30 counted for SKU-A instead of 42)
+  const flawedConsolidated: PickingItem[] = [
+    {
+      id: "1",
+      sku: "SKU-A",
+      producto: "Prod A",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 30,
+      cta2: 0,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 30,
+      preparado: false,
+    },
+    {
+      id: "2",
+      sku: "SKU-B",
+      producto: "Prod B",
+      marca: "M",
+      modelo: "M",
+      categoria: "C",
+      cta1: 10,
+      cta2: 0,
+      cta3: 0,
+      cta4: 0,
+      cta5: 0,
+      totalPreparar: 10,
+      preparado: false,
+    },
+  ];
+
+  const reportFlawed = auditPickingConsolidation(rawOriginals, flawedConsolidated);
+  assert.equal(reportFlawed.isValid, false);
+  assert.equal(reportFlawed.totalOriginalUnits, 52);
+  assert.equal(reportFlawed.totalConsolidatedUnits, 40);
+  assert.equal(reportFlawed.discrepancies.length, 1);
+  assert.equal(reportFlawed.discrepancies[0].sku, "SKU-A");
+  assert.equal(reportFlawed.discrepancies[0].expectedUnits, 42);
+  assert.equal(reportFlawed.discrepancies[0].consolidatedUnits, 30);
+  assert.ok(reportFlawed.alertMessage?.includes("Alerta de discrepancia"));
+});
+
+test("cumulative totalPreparar sums all account columns (cta1..cta5) accurately", () => {
+  const itemRaw = [
+    { sku: "ORI-BEN-52", cta1: 10, cta2: 5 },
+    { sku: "ORI-BEN-52", cta1: 2, cta3: 8 },
+    { sku: "ORI-BEN-52", cta4: 4, cta5: 1 },
+  ];
+
+  const consolidated = normalizePickingItems(itemRaw);
+  assert.equal(consolidated.length, 1);
+  assert.equal(consolidated[0].cta1, 12);
+  assert.equal(consolidated[0].cta2, 5);
+  assert.equal(consolidated[0].cta3, 8);
+  assert.equal(consolidated[0].cta4, 4);
+  assert.equal(consolidated[0].cta5, 1);
+  assert.equal(consolidated[0].totalPreparar, 30);
+});
+

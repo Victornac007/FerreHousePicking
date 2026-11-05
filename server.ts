@@ -2,7 +2,9 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
+import { consolidatePdfsDeterministically, cleanSku, detectBrand } from "./src/utils/deterministicConsolidator";
+import { auditPickingConsolidation, PickingItem, RawExtractedProduct } from "./src/utils/pickingLogic";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,92 +23,25 @@ interface UploadedPdfPayload {
   mimeType?: string;
 }
 
-const pickingResponseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    resumenOperativo: {
-      type: Type.STRING,
-      description:
-        "Breve resumen ejecutivo de la consolidación realizada (ej. cuántas cuentas aportaron productos y observaciones clave de homologación).",
-    },
-    items: {
-      type: Type.ARRAY,
-      description:
-        "Lista consolidada y homologada de todos los productos únicos a preparar en bodega.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          sku: {
-            type: Type.STRING,
-            description:
-              "Código SKU unificado o código de referencia del producto (en mayúsculas, sin espacios extra). Si el PDF no indica SKU explícito, genera un código corto estandarizado basado en marca y modelo (ej. BOSCH-GSB13RE).",
-          },
-          producto: {
-            type: Type.STRING,
-            description:
-              "Nombre comercial estandarizado y claro del producto (unificando variaciones mínimas de título entre las cuentas).",
-          },
-          marca: {
-            type: Type.STRING,
-            description: "Marca del producto o herramienta (ej. DeWalt, Bosch, Makita, Stanley, Truper).",
-          },
-          modelo: {
-            type: Type.STRING,
-            description: "Modelo o especificación técnica clave del producto (ej. DCD7781, 750W 1/2\", 18V).",
-          },
-          categoria: {
-            type: Type.STRING,
-            description: "Categoría ferretera (ej. Herramientas Eléctricas, Accesorios, Fijaciones, Seguridad Industrial, Manuales).",
-          },
-          cta1: {
-            type: Type.INTEGER,
-            description: "Cantidad de unidades vendidas en la Cuenta 1 (0 si no hubo ventas en esta cuenta).",
-          },
-          cta2: {
-            type: Type.INTEGER,
-            description: "Cantidad de unidades vendidas en la Cuenta 2 (0 si no hubo ventas en esta cuenta).",
-          },
-          cta3: {
-            type: Type.INTEGER,
-            description: "Cantidad de unidades vendidas en la Cuenta 3 (0 si no hubo ventas en esta cuenta).",
-          },
-          cta4: {
-            type: Type.INTEGER,
-            description: "Cantidad de unidades vendidas en la Cuenta 4 (0 si no hubo ventas en esta cuenta).",
-          },
-          cta5: {
-            type: Type.INTEGER,
-            description: "Cantidad de unidades vendidas en la Cuenta 5 (0 si no hubo ventas en esta cuenta).",
-          },
-          totalPreparar: {
-            type: Type.INTEGER,
-            description: "Suma exacta de cta1 + cta2 + cta3 + cta4 + cta5.",
-          },
-        },
-        required: [
-          "sku",
-          "producto",
-          "marca",
-          "modelo",
-          "categoria",
-          "cta1",
-          "cta2",
-          "cta3",
-          "cta4",
-          "cta5",
-          "totalPreparar",
-        ],
+// Global Gemini AI client instance (server-side only)
+let aiClient: GoogleGenAI | null = null;
+if (process.env.GEMINI_API_KEY) {
+  aiClient = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
       },
     },
-  },
-  required: ["resumenOperativo", "items"],
-};
+  });
+}
 
 app.post("/api/consolidate", async (req, res) => {
   try {
-    const { files, accountNames } = req.body as {
+    const { files, accountNames, useGeminiAI } = req.body as {
       files: UploadedPdfPayload[];
       accountNames: string[];
+      useGeminiAI?: boolean;
     };
 
     if (!files || !Array.isArray(files) || files.length === 0) {
@@ -115,96 +50,190 @@ app.post("/api/consolidate", async (req, res) => {
       });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({
-        error:
-          "No se encontró la clave GEMINI_API_KEY en el servidor. Verifica la configuración en el panel Settings > Secrets.",
-      });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-
     const names = Array.isArray(accountNames) && accountNames.length === 5
       ? accountNames
       : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
 
-    const systemInstruction = `Eres el motor experto de auditoría y consolidación logística de bodega para "FerreHousePicking", especializado en comercio electrónico de ferretería industrial y Mercado Libre (Mercado Envíos / Colecta / Flex).
+    // Intentar primero extracción Híbrida con Gemini AI si el cliente está configurado y useGeminiAI no es false
+    if (aiClient && useGeminiAI !== false) {
+      try {
+        console.log("Iniciando extracción con Gemini AI (gemini-3.8-flash)...");
+        const allRawExtracted: RawExtractedProduct[] = [];
+        const mergedMap = new Map<string, PickingItem>();
 
-TU MISIÓN CRÍTICA:
-Analizar simultáneamente los archivos PDF adjuntos correspondientes a hasta 5 cuentas distintas de Mercado Libre:
-- Cuenta 1 (cta1): "${names[0]}"
-- Cuenta 2 (cta2): "${names[1]}"
-- Cuenta 3 (cta3): "${names[2]}"
-- Cuenta 4 (cta4): "${names[3]}"
-- Cuenta 5 (cta5): "${names[4]}"
+        for (const file of files) {
+          const slotIdx = file.slotIndex;
+          if (slotIdx < 0 || slotIdx > 4) continue;
 
-REGLAS OBLIGATORIAS DE EXTRACCIÓN Y HOMOLOGACIÓN:
-1. Identifica TODOS los productos vendidos y sus cantidades exactas en cada uno de los PDFs adjuntos. Cada archivo PDF viene precedido de una etiqueta indicando a qué número de cuenta pertenece (Cuenta 1 a Cuenta 5).
-2. Unifica y homologa productos idénticos entre las 5 cuentas en una sola fila consolidada:
-   - Aunque el título de la publicación en Mercado Libre varíe ligeramente en mayúsculas, orden de palabras, signos o espacios (por ejemplo: "Taladro Percutor Inalambrico DeWalt 20v DCD7781" vs "TALADRO DEWALT DCD7781 20V SIN CARBONES"), agrúpalos bajo un mismo registro si comparten el mismo SKU, código universal, o misma Marca + Modelo exacto.
-3. Asigna las cantidades vendidas exactamente en la propiedad correspondiente a la cuenta de origen (cta1, cta2, cta3, cta4, cta5). Si una cuenta no tiene archivo cargado o no vendió ese producto, su cantidad para ese ítem DEBE ser 0.
-4. Calcula 'totalPreparar' como la suma matemática exacta: cta1 + cta2 + cta3 + cta4 + cta5.
-5. Si en un mismo PDF de una misma cuenta el mismo SKU aparece repetido en varias órdenes o ventas separadas, suma primero todas las unidades dentro de esa misma cuenta antes de asignarlo a ctaX.`;
+          const cleanBase64 = file.base64Data.includes(",")
+            ? file.base64Data.split(",")[1]
+            : file.base64Data;
 
-    const parts: Array<
-      | { text: string }
-      | { inlineData: { mimeType: string; data: string } }
-    > = [];
+          const prompt = `Analiza este documento PDF de Mercado Libre (cuenta: ${names[slotIdx]}).
+Extrae absolutamente TODOS los productos listados.
+Es CRÍTICO extraer:
+1. El código SKU (código de vendedor, SKU de producto o código de artículo).
+2. El título o nombre del producto.
+3. La cantidad exacta de unidades enviadas o a preparar.
+Es importante mantener el SKU exacto tal como aparece en el archivo, ya que productos de cuentas distintas pueden tener nombres diferentes pero el mismo SKU.
+Responde únicamente en el formato JSON estructurado especificado.`;
 
-    parts.push({
-      text: `Procesa y consolida los siguientes ${files.length} archivo(s) PDF de resúmenes de ventas / etiquetas / órdenes de preparación de Mercado Libre.`,
-    });
+          const aiResponse = await aiClient.models.generateContent({
+            model: "gemini-3.8-flash",
+            contents: [
+              {
+                inlineData: {
+                  mimeType: file.mimeType || "application/pdf",
+                  data: cleanBase64,
+                },
+              },
+              { text: prompt },
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    sku: { type: Type.STRING, description: "Código SKU o código de vendedor exacto" },
+                    producto: { type: Type.STRING, description: "Título o descripción del producto" },
+                    cantidad: { type: Type.INTEGER, description: "Cantidad de unidades enviadas o vendidas" },
+                  },
+                  required: ["sku", "cantidad"],
+                },
+              },
+            },
+          });
 
-    for (const file of files) {
-      const slotNumber = file.slotIndex + 1; // 1 to 5
-      const cleanBase64 = file.base64Data.includes(",")
-        ? file.base64Data.split(",")[1]
-        : file.base64Data;
+          const jsonText = (aiResponse.text ?? "[]").trim();
+          let parsedArray: Array<{ sku: string; producto?: string; cantidad: number }> = [];
+          try {
+            parsedArray = JSON.parse(jsonText);
+          } catch {
+            parsedArray = [];
+          }
 
-      parts.push({
-        text: `--- INICIO ARCHIVO DE CUENTA ${slotNumber} (Propiedad JSON: cta${slotNumber} - Nombre Cuenta: "${file.accountName}" - Archivo: "${file.fileName}") ---`,
-      });
-      parts.push({
-        inlineData: {
-          mimeType: file.mimeType || "application/pdf",
-          data: cleanBase64,
-        },
-      });
+          for (const rawItem of parsedArray) {
+            const rawSku = cleanSku(rawItem.sku || "");
+            if (!rawSku) continue;
+            const qty = Math.max(1, Math.round(Number(rawItem.cantidad) || 1));
+            const prodTitle = (rawItem.producto || rawSku).trim();
+
+            allRawExtracted.push({
+              sku: rawSku,
+              producto: prodTitle,
+              cantidad: qty,
+              slotIndex: slotIdx,
+              accountName: names[slotIdx],
+            });
+
+            const normKey = rawSku.toUpperCase();
+            const existing = mergedMap.get(normKey);
+
+            if (existing) {
+              if (slotIdx === 0) existing.cta1 += qty;
+              else if (slotIdx === 1) existing.cta2 += qty;
+              else if (slotIdx === 2) existing.cta3 += qty;
+              else if (slotIdx === 3) existing.cta4 += qty;
+              else if (slotIdx === 4) existing.cta5 += qty;
+
+              existing.totalPreparar = existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
+
+              // Registrar variante de nombre si es diferente
+              existing.variantesNombre = existing.variantesNombre || [];
+              if (!existing.variantesNombre.some((v) => v.title.toLowerCase() === prodTitle.toLowerCase())) {
+                existing.variantesNombre.push({
+                  accountIndex: slotIdx,
+                  accountName: names[slotIdx],
+                  title: prodTitle,
+                  quantity: qty,
+                });
+              }
+
+              if (prodTitle.length > existing.producto.length) {
+                existing.producto = prodTitle;
+                existing.marca = detectBrand(prodTitle);
+              }
+            } else {
+              const c1 = slotIdx === 0 ? qty : 0;
+              const c2 = slotIdx === 1 ? qty : 0;
+              const c3 = slotIdx === 2 ? qty : 0;
+              const c4 = slotIdx === 3 ? qty : 0;
+              const c5 = slotIdx === 4 ? qty : 0;
+
+              mergedMap.set(normKey, {
+                id: `item-${normKey}`,
+                sku: rawSku,
+                producto: prodTitle,
+                marca: detectBrand(prodTitle),
+                modelo: "Estándar",
+                categoria: "Ferretería",
+                cta1: c1,
+                cta2: c2,
+                cta3: c3,
+                cta4: c4,
+                cta5: c5,
+                totalPreparar: c1 + c2 + c3 + c4 + c5,
+                preparado: false,
+                variantesNombre: [
+                  {
+                    accountIndex: slotIdx,
+                    accountName: names[slotIdx],
+                    title: prodTitle,
+                    quantity: qty,
+                  },
+                ],
+              });
+            }
+          }
+        }
+
+        const finalItems = Array.from(mergedMap.values());
+        if (finalItems.length > 0) {
+          const auditReport = auditPickingConsolidation(allRawExtracted, finalItems);
+          const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
+
+          return res.json({
+            resumenOperativo: `Consolidación Híbrida Inteligente (Gemini AI gemini-3.8-flash): Se procesaron ${files.length} archivo(s) PDF de Mercado Libre, unificando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas entre las 5 cuentas.`,
+            items: finalItems,
+            auditReport,
+            mode: "gemini",
+          });
+        }
+      } catch (geminiErr) {
+        console.warn("Fallo temporal en Gemini AI, alternando a modo determinista local:", geminiErr);
+      }
     }
 
-    parts.push({
-      text: "Devuelve exclusivamente el objeto JSON estructurado con la lista consolidada de picking para bodega.",
+    // Fallback 100% PROCESAMIENTO DETERMINISTA LOCAL (NODE.JS + PDF-PARSE)
+    const deterministicResult = await consolidatePdfsDeterministically(files, names);
+    const finalItems = deterministicResult.items;
+
+    const auditReport = auditPickingConsolidation(
+      deterministicResult.rawExtractedItems,
+      finalItems
+    );
+
+    const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
+    const auditStatusStr = auditReport.isValid
+      ? "Auditoría de integridad: 100% exacto (0 discrepancias)"
+      : `Discrepancia detectada: ${auditReport.alertMessage}`;
+
+    const resumenOperativo = `Consolidación determinista local: se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas. ${auditStatusStr}.`;
+
+    return res.json({
+      resumenOperativo,
+      items: finalItems,
+      auditReport,
+      mode: "deterministic",
     });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: { parts },
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: pickingResponseSchema,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
-
-    const rawText = (response.text ?? "{}").trim();
-    const parsed = JSON.parse(rawText);
-
-    return res.json(parsed);
   } catch (error: unknown) {
     console.error("Error en /api/consolidate:", error);
     const errMsg =
       error instanceof Error
         ? error.message
-        : "Error inesperado al procesar los archivos PDF con Gemini.";
+        : "Error al procesar los archivos PDF de Mercado Libre.";
     return res.status(500).json({ error: errMsg });
   }
 });
@@ -226,8 +255,9 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`FerreHousePicking server running on http://0.0.0.0:${PORT}`);
+    console.log(`FerreHousePicking server running locally on http://0.0.0.0:${PORT}`);
   });
 }
 
 startServer();
+

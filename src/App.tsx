@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from "react";
-import { Printer, PlusCircle, AlertTriangle, CheckCircle2, Clock, RotateCcw, Sparkles } from "lucide-react";
+import { Printer, PlusCircle, AlertTriangle, CheckCircle2, Clock, RotateCcw, Sparkles, FileText } from "lucide-react";
 import {
   AccountSlot,
   PickingItem,
@@ -15,7 +15,9 @@ import {
   calculatePickingKPIs,
   filterAndSortPickingItems,
   generatePickingCsvWithBom,
+  parsePdfLocally,
 } from "./utils/pickingLogic";
+import { generateVerticalPdfReport } from "./utils/pdfExport";
 import { AccountUploadSection } from "./components/AccountUploadSection";
 import { KpiSummaryStrip } from "./components/KpiSummaryStrip";
 import { PickingTableSection } from "./components/PickingTableSection";
@@ -336,7 +338,7 @@ export default function App() {
     setStatusNotice("Archivos PDF removidos de las 5 ranuras.");
   };
 
-  const handleConsolidateWithGemini = async () => {
+  const handleConsolidateLocally = async () => {
     const activeFiles = slots.filter((s) => s.base64Data !== null);
     if (activeFiles.length === 0) {
       setErrorBanner(
@@ -350,6 +352,7 @@ export default function App() {
     setStatusNotice(null);
 
     try {
+      // 1. Enviar archivos al backend Express (/api/consolidate) con opción Híbrida Gemini AI
       const response = await fetch("/api/consolidate", {
         method: "POST",
         headers: {
@@ -357,6 +360,7 @@ export default function App() {
         },
         body: JSON.stringify({
           accountNames: slots.map((s) => s.name),
+          useGeminiAI: true,
           files: activeFiles.map((s) => ({
             slotIndex: s.index,
             accountName: s.name,
@@ -367,28 +371,67 @@ export default function App() {
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Error al procesar los PDFs en el servidor."
-        );
+      if (response.ok) {
+        const data = await response.json();
+        const normalized = normalizePickingItems(data.items || []);
+
+        if (normalized.length > 0) {
+          setItems(normalized);
+          setResumenOperativo(
+            data.resumenOperativo ||
+              `Consolidación completada a partir de ${activeFiles.length} cuenta(s) de Mercado Libre.`
+          );
+
+          if (data.auditReport && !data.auditReport.isValid) {
+            setErrorBanner(data.auditReport.alertMessage);
+          } else {
+            setStatusNotice(
+              `¡Consolidación exitosa y auditada! Se unificaron ${normalized.length} SKUs únicos de ${activeFiles.length} cuenta(s) de Mercado Libre manteniendo intactas las cantidades e identificando variantes de nombre.`
+            );
+          }
+          setIsProcessing(false);
+          return;
+        }
       }
 
-      const normalized = normalizePickingItems(data.items || []);
-      setItems(normalized);
-      setResumenOperativo(
-        data.resumenOperativo ||
-          `Consolidación completada a partir de ${activeFiles.length} cuenta(s) de Mercado Libre.`
-      );
-      setStatusNotice(
-        `¡Consolidación exitosa! Se homologaron ${normalized.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF.`
-      );
+      // 2. Fallback local en navegador con pdfjs-dist si la llamada API no devuelve resultados
+      const localResult = await parsePdfLocally(slots, accountNames);
+      if (localResult.items.length > 0) {
+        setItems(localResult.items);
+        setResumenOperativo(localResult.resumenOperativo);
+
+        if (!localResult.auditReport.isValid) {
+          setErrorBanner(localResult.auditReport.alertMessage);
+        } else {
+          setStatusNotice(
+            `¡Consolidación local exitosa y auditada! Se unificaron ${localResult.items.length} productos únicos (SKUs) de ${activeFiles.length} archivo(s) PDF sin ninguna discrepancia.`
+          );
+        }
+      } else {
+        setErrorBanner(
+          `Atención: No se detectaron códigos de producto (SKUs) en los ${activeFiles.length} archivo(s) PDF subidos. Verifica que los documentos correspondan a etiquetas o reportes de ventas de Mercado Libre.`
+        );
+      }
     } catch (err: unknown) {
-      setErrorBanner(
-        err instanceof Error
-          ? err.message
-          : "No se pudo completar la consolidación de los archivos PDF."
-      );
+      console.warn("Fallo en llamada al servidor, ejecutando motor local en navegador...", err);
+      try {
+        const localResult = await parsePdfLocally(slots, accountNames);
+        if (localResult.items.length > 0) {
+          setItems(localResult.items);
+          setResumenOperativo(localResult.resumenOperativo);
+          setStatusNotice(
+            `¡Consolidación local exitosa! Se homologaron ${localResult.items.length} SKUs de ${activeFiles.length} archivo(s) PDF.`
+          );
+        } else {
+          setErrorBanner("No se pudieron extraer SKUs de los archivos PDF provistos.");
+        }
+      } catch (localErr: unknown) {
+        setErrorBanner(
+          localErr instanceof Error
+            ? localErr.message
+            : "No se pudo completar la consolidación de los archivos PDF."
+        );
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -430,6 +473,24 @@ export default function App() {
 
   const handlePrintOrder = () => {
     window.print();
+  };
+
+  const handleDownloadPdfReport = async () => {
+    if (items.length === 0) return;
+    try {
+      setStatusNotice("Generando reporte PDF vertical A4...");
+      await generateVerticalPdfReport(
+        items,
+        accountNames,
+        kpis,
+        orderNumber,
+        formattedDate
+      );
+      setStatusNotice(`Reporte PDF vertical (Orden_Picking_Vertical_${orderNumber}.pdf) descargado exitosamente.`);
+    } catch (e) {
+      console.error("Error al generar PDF:", e);
+      setErrorBanner("No se pudo generar el documento PDF. Intenta usando el botón de Imprimir.");
+    }
   };
 
   const handleExportCsv = () => {
@@ -626,7 +687,7 @@ export default function App() {
           onUploadBatchFiles={handleUploadBatchFiles}
           onRemoveSlotFile={handleRemoveSlotFile}
           onClearAllFiles={handleClearAllFiles}
-          onConsolidateWithGemini={handleConsolidateWithGemini}
+          onConsolidateLocally={handleConsolidateLocally}
         />
 
         {/* Sección 2: Tarjetas de Resumen Superior (KPIs) */}
@@ -652,6 +713,7 @@ export default function App() {
           onMarkAllPrepared={handleMarkAllPrepared}
           onPrintOrder={handlePrintOrder}
           onExportCsv={handleExportCsv}
+          onDownloadPdf={handleDownloadPdfReport}
         />
 
         {/* Bloque exclusivo para Impresión: Firmas de Responsable de Bodega y Recepción Courier */}
@@ -677,7 +739,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modal interactivo de progreso de escaneo con Gemini 3.6 Flash */}
+      {/* Modal interactivo de progreso de escaneo local */}
       <ScanProgressModal isProcessing={isProcessing} slots={slots} />
 
       {/* Modal para agregar o sumar un producto manualmente */}

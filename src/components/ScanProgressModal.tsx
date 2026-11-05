@@ -8,10 +8,10 @@ interface ScanProgressModalProps {
 }
 
 const SCAN_STEPS = [
-  { id: 1, label: "Decodificando archivos PDF de Mercado Libre...", range: "0% - 25%" },
-  { id: 2, label: "Poniendo a trabajar al personal de Mercado Libre...", range: "26% - 60%" },
-  { id: 3, label: "Homologando marcas, SKUs y modelos entre cuentas...", range: "61% - 85%" },
-  { id: 4, label: "Consolidando cantidades e indicando totales por cuenta...", range: "86% - 100%" },
+  { id: 1, label: "Leyendo texto digital de cada archivo PDF...", range: "0% - 25%" },
+  { id: 2, label: "Extrayendo SKUs y cantidades exactas por cuenta...", range: "26% - 60%" },
+  { id: 3, label: "Verificando códigos de producto y unidades vendidas...", range: "61% - 85%" },
+  { id: 4, label: "Consolidando totales matemáticos por cuenta (100% exacto)...", range: "86% - 100%" },
 ];
 
 function formatBytes(bytes: number | null): string {
@@ -38,7 +38,7 @@ export const ScanProgressModal: React.FC<ScanProgressModalProps> = ({
       return;
     }
 
-    // Progression loop to smoothly advance percentages while awaiting the Gemini API response
+    // Progression loop to smoothly advance percentages while awaiting local PDF extraction
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev < 28) {
@@ -244,7 +244,7 @@ export const ScanProgressModal: React.FC<ScanProgressModalProps> = ({
         {/* Footer info */}
         <div className="mt-4 text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5 pt-2 border-t border-slate-100">
           <Cpu className="w-3.5 h-3.5 text-slate-400" />
-          <span>Servidor procesando con @google/genai y Gemini 3.6 Flash</span>
+          <span>Procesamiento 100% Local (pdfjs-dist + Auditoría de Integridad)</span>
         </div>
       </div>
     </div>

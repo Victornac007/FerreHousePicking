@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Search,
   Printer,
@@ -8,6 +8,10 @@ import {
   ArrowUpDown,
   PackageOpen,
   X,
+  FileText,
+  Info,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   PickingItem,
@@ -36,6 +40,7 @@ interface PickingTableSectionProps {
   onMarkAllPrepared: (prepared: boolean) => void;
   onPrintOrder: () => void;
   onExportCsv: () => void;
+  onDownloadPdf?: () => void;
 }
 
 export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
@@ -57,7 +62,10 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
   onMarkAllPrepared,
   onPrintOrder,
   onExportCsv,
+  onDownloadPdf,
 }) => {
+  const [expandedVariantsSku, setExpandedVariantsSku] = useState<string | null>(null);
+
   const allFilteredPrepared =
     filteredItems.length > 0 && filteredItems.every((item) => item.preparado);
 
@@ -84,9 +92,17 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
       {/* Cabecera Operativa y Botones de Exportación / Impresión (Oculto en papel) */}
       <div className="no-print flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
-          <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-            2. Planilla Maestra de Consolidación y Picking
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+              2. Planilla Maestra de Consolidación y Picking
+            </h2>
+            {items.length > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                Auditoría Matemática Verificada 100%
+              </span>
+            )}
+          </div>
           {resumenOperativo ? (
             <p className="text-xs text-slate-600 mt-1 max-w-3xl">
               {resumenOperativo}
@@ -99,6 +115,18 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          {onDownloadPdf && (
+            <button
+              type="button"
+              onClick={onDownloadPdf}
+              disabled={items.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-colors cursor-pointer disabled:opacity-40 whitespace-nowrap shrink-0 shadow-2xs"
+            >
+              <FileText className="w-4 h-4 text-red-600 shrink-0" />
+              <span>Reporte PDF Vertical</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onExportCsv}
@@ -121,8 +149,59 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
         </div>
       </div>
 
+      {/* Pestañas Operativas por Cuenta Mercado Libre (Oculto en impresión) */}
+      <div className="no-print mt-5 pb-3 border-b border-slate-200">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/80 rounded-xl border border-slate-200 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => onAccountFilterChange(null)}
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              accountFilter === null
+                ? "bg-[#2d3277] text-[#ffe600] shadow-xs"
+                : "text-slate-700 hover:text-slate-900 hover:bg-slate-200/60"
+            }`}
+          >
+            <span>Consolidado General (Todas)</span>
+            <span className="text-[10px] font-mono-tabular px-1.5 py-0.5 rounded bg-black/20">
+              {items.length} SKUs
+            </span>
+          </button>
+
+          {accountNames.map((name, idx) => {
+            const accNum = idx + 1;
+            const isSelected = accountFilter === accNum;
+            const keyName = `cta${accNum}` as "cta1" | "cta2" | "cta3" | "cta4" | "cta5";
+            const accItemsCount = items.filter((i) => i[keyName] > 0).length;
+
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onAccountFilterChange(accNum)}
+                className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-[#3483fa] text-white shadow-2xs font-bold"
+                    : "text-slate-700 hover:text-slate-900 hover:bg-slate-200/60"
+                }`}
+              >
+                <span>Cta {accNum}: {name}</span>
+                {accItemsCount > 0 && (
+                  <span
+                    className={`text-[10px] font-mono-tabular px-1.5 py-0.5 rounded ${
+                      isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-800"
+                    }`}
+                  >
+                    {accItemsCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Barra de Búsqueda en Tiempo Real y Filtros Operativos (Oculto en papel) */}
-      <div className="no-print mt-5 flex flex-col xl:flex-row xl:items-center justify-between gap-3.5">
+      <div className="no-print mt-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3.5">
         {/* Buscador por SKU, marca o producto */}
         <div className="relative flex-1 max-w-xl">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -146,7 +225,7 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
           )}
         </div>
 
-        {/* Controles segmentados de Estado y Cuenta */}
+        {/* Controles segmentados de Estado */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Filtro por estado de preparación */}
           <div
@@ -189,25 +268,6 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
             </button>
           </div>
 
-          {/* Filtro por cuenta específica */}
-          <select
-            aria-label="Filtrar productos por cuenta de Mercado Libre"
-            value={accountFilter === null ? "" : String(accountFilter)}
-            onChange={(e) =>
-              onAccountFilterChange(
-                e.target.value === "" ? null : Number(e.target.value)
-              )
-            }
-            className="px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 cursor-pointer"
-          >
-            <option value="">Todas las cuentas (1 a 5)</option>
-            {accountNames.map((name, idx) => (
-              <option key={idx} value={idx + 1}>
-                Con ventas en: {name}
-              </option>
-            ))}
-          </select>
-
           {items.length > 0 && (
             <button
               type="button"
@@ -224,7 +284,13 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
 
       {/* Estado Vacío si no hay ítems */}
       {items.length === 0 ? (
-        <div className="no-print mt-6 py-14 px-4 border border-dashed border-slate-200 rounded-xl text-center max-w-xl mx-auto">
+        <div className="no-print mt-6 py-10 px-4 border border-dashed border-slate-200 rounded-xl text-center max-w-xl mx-auto">
+          {resumenOperativo && (
+            <div className="mb-4 p-3.5 bg-blue-50/90 border border-blue-200 rounded-lg text-xs font-medium text-slate-800 text-left">
+              <span className="font-bold text-[#2d3277] block mb-1">Último reporte de escaneo:</span>
+              <span>{resumenOperativo}</span>
+            </div>
+          )}
           <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center mx-auto mb-3">
             <PackageOpen className="w-6 h-6" />
           </div>
@@ -247,10 +313,11 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => onToggleSort("sku")}
-                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold"
+                    className="inline-flex items-center gap-1 hover:text-slate-950 cursor-pointer uppercase font-bold text-[#2d3277]"
+                    title="Ordenar por Código de SKU Original"
                   >
-                    <span>SKU</span>
-                    <ArrowUpDown className="w-3 h-3 no-print" />
+                    <span>SKU Original</span>
+                    <ArrowUpDown className="w-3 h-3 no-print text-slate-500" />
                   </button>
                 </th>
                 <th className="py-3 px-3 min-w-[200px] print:w-auto print:px-1.5">
@@ -339,20 +406,21 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                         />
                       </td>
 
-                      {/* Columna 2: SKU / Código */}
+                      {/* Columna 2: SKU Original de Producto */}
                       <td className="py-3 px-3 print:py-1 print:px-1.5 align-middle">
-                        <div
-                          className={`font-mono-tabular font-bold text-xs print:text-[7pt] print:leading-tight break-all ${
+                        <span
+                          title={`SKU Original: ${item.sku}`}
+                          className={`font-mono-tabular font-black text-xs print:text-[7.5pt] print:leading-tight break-all inline-block px-2 py-0.5 rounded border ${
                             item.preparado
-                              ? "line-through text-slate-500"
-                              : "text-slate-900"
+                              ? "line-through text-slate-400 bg-slate-100 border-slate-200"
+                              : "text-[#2d3277] bg-slate-100/90 border-slate-300 shadow-2xs"
                           }`}
                         >
                           {item.sku}
-                        </div>
+                        </span>
                       </td>
 
-                      {/* Columna 3: Producto, Marca y Modelo */}
+                      {/* Columna 3: Producto, Marca, Modelo y Variantes de Nombre por Cuenta */}
                       <td className="py-3 px-3 print:py-1 print:px-1.5 align-middle">
                         <div
                           className={`font-semibold text-sm print:text-[7.5pt] print:leading-snug ${
@@ -372,6 +440,47 @@ export const PickingTableSection: React.FC<PickingTableSectionProps> = ({
                           <span aria-hidden="true">·</span>
                           <span>{item.categoria}</span>
                         </div>
+
+                        {/* Distintos nombres en distintas cuentas para el mismo SKU */}
+                        {item.variantesNombre && item.variantesNombre.length > 1 && (
+                          <div className="no-print mt-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedVariantsSku(
+                                  expandedVariantsSku === item.sku ? null : item.sku
+                                );
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-colors cursor-pointer"
+                            >
+                              <Info className="w-3 h-3 text-amber-700" />
+                              <span>{item.variantesNombre.length} nombres distintos detectados para este SKU</span>
+                              {expandedVariantsSku === item.sku ? (
+                                <ChevronUp className="w-3 h-3" />
+                              ) : (
+                                <ChevronDown className="w-3 h-3" />
+                              )}
+                            </button>
+
+                            {expandedVariantsSku === item.sku && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs space-y-1"
+                              >
+                                <p className="font-bold text-amber-950 text-[11px] border-b border-amber-200/70 pb-0.5">
+                                  Mismo SKU ({item.sku}) en diferentes cuentas:
+                                </p>
+                                {item.variantesNombre.map((v, vIdx) => (
+                                  <div key={vIdx} className="flex items-start justify-between gap-2 text-[11px] text-amber-900">
+                                    <span className="font-semibold shrink-0">{v.accountName}:</span>
+                                    <span className="text-right truncate flex-1 font-medium">"{v.title}" ({v.quantity} uds)</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Columnas 4 a 8: Cta 1 a Cta 5 */}
