@@ -16,19 +16,37 @@ export interface DeterministicConsolidationResult {
   extractedCount: number;
 }
 
+// Comprehensive regex for all Mercado Libre SKU prefixes in Spanish
+const SKU_PREFIX_KEYWORD_REGEX = /(?:CÓDIGO\s+DE\s+VENDEDOR|CODIGO\s+DE\s+VENDEDOR|CÓDIGO\s+VENDEDOR|CODIGO\s+VENDEDOR|SKU\s+DE\s+VENDEDOR|SKU\s+VENDEDOR|CÓDIGO\s+DE\s+PRODUCTO|CODIGO\s+DE\s+PRODUCTO|CÓDIGO\s+DE\s+ARTÍCULO|CODIGO\s+DE\s+ARTICULO|CÓD\.\s*VENDEDOR|COD\.\s*VENDEDOR|CÓD\.\s*ART|COD\.\s*ART|CÓD\.\s*PROD|COD\.\s*PROD|SKU|CÓDIGO|CODIGO|CÓD|COD|REF|REFERENCIA|ARTÍCULO|ARTICULO|ART|VARIANTE|VARIACIÓN|VARIACION)[\s:.\-#]+([A-Za-z0-9_\-\.\/]{2,45})/i;
+
 export function cleanSku(val: string): string {
+  if (!val) return "";
   let s = val.trim();
-  // Strip leading prefixes like "SKU:", "SKU -", "COD:", "CODIGO:", "REF:"
-  s = s.replace(/^(SKU|CÓDIGO|CODIGO|COD|REF|ARTÍCULO|ART)[\s:.\-#]+/i, "").trim();
-  // Strip trailing punctuation like semicolons, pipes, commas
-  s = s.replace(/^[|·\-\s]+|[|·\-\s]+$/g, "").trim();
+
+  // Strip known Mercado Libre prefixes
+  s = s.replace(
+    /^(?:CÓDIGO\s+DE\s+VENDEDOR|CODIGO\s+DE\s+VENDEDOR|CÓDIGO\s+VENDEDOR|CODIGO\s+VENDEDOR|SKU\s+DE\s+VENDEDOR|SKU\s+VENDEDOR|CÓDIGO\s+DE\s+PRODUCTO|CODIGO\s+DE\s+PRODUCTO|CÓDIGO\s+DE\s+ARTÍCULO|CODIGO\s+DE\s+ARTICULO|CÓD\.\s*VENDEDOR|COD\.\s*VENDEDOR|CÓD\.\s*ART|COD\.\s*ART|CÓD\.\s*PROD|COD\.\s*PROD|SKU|CÓDIGO|CODIGO|CÓD|COD|REF|REFERENCIA|ARTÍCULO|ARTICULO|ART|VARIANTE|VARIACIÓN|VARIACION)[\s:.\-#]+/i,
+    ""
+  ).trim();
+
+  // Strip leading/trailing symbols
+  s = s.replace(/^[|·\-\s,;:]+|[|·\-\s,;:]+$/g, "").trim();
+
+  const noiseWords = [
+    "VENDEDOR", "ARTICULO", "PRODUCTO", "REFERENCIA", "DESCRIPCION",
+    "CANTIDAD", "CANT", "PAGINA", "TOTAL", "ORDEN", "FECHA", "GUIA",
+    "RECEPTOR", "ENVIO", "COLECTA", "COMPRADOR", "DIRECCION", "PAQUETE"
+  ];
+  if (noiseWords.includes(s.toUpperCase())) {
+    return "";
+  }
+
   return s;
 }
 
 function cleanProductName(val: string): string {
   let p = val.trim();
   p = p.replace(/\s+/g, " ");
-  // Remove trailing or leading punctuation
   p = p.replace(/^[\s\-:;,.]+|[\s\-:;,.]+$/g, "");
   return p;
 }
@@ -52,8 +70,8 @@ function detectBrand(text: string): string {
  * Parses raw text from a Mercado Libre PDF to extract exact SKU and quantities.
  * Covers:
  * - Mercado Envíos Colecta (Listas de bultos/resumen de envío con columnas SKU, Cantidad, Producto)
- * - Mercado Envíos Flex / Agencias (Etiquetas y resúmenes de preparación)
- * - Tablas estándar con delimitadores
+ * - Mercado Envíos Flex / Agencias (Etiquetas N páginas, 1 por paquete)
+ * - Reportes con "Código de vendedor:", "SKU:", "Cant:", "1 u.", etc.
  */
 export function extractProductsFromText(text: string): Array<{ sku: string; producto: string; cantidad: number }> {
   const results: Array<{ sku: string; producto: string; cantidad: number }> = [];
@@ -62,56 +80,58 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Pattern 1: Inline SKU & Cantidad (e.g., "SKU: TAL-DCD7781 | Cant: 2 | Taladro DeWalt" or "Cant: 2 | SKU: ...")
-    const inlineSkuMatch = line.match(/(?:SKU|CÓDIGO|CODIGO|COD)[\s:.\-#]+([A-Za-z0-9_\-\.\/]{2,45})/i);
+    // Pattern 1: Match line with SKU prefix keyword (e.g. "Código de vendedor: TAL-DCD7781" or "SKU: TAL-DCD7781 | Cant: 2")
+    const inlineSkuMatch = line.match(SKU_PREFIX_KEYWORD_REGEX);
     const inlineQtyMatch = line.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]+)/i);
 
     if (inlineSkuMatch && inlineQtyMatch) {
       const sku = cleanSku(inlineSkuMatch[1]);
       const qty = parseInt(inlineQtyMatch[1], 10);
       let prodName = line
-        .replace(/(?:SKU|CÓDIGO|CODIGO|COD)[\s:.\-#]+[A-Za-z0-9_\-\.\/]{2,45}/i, "")
+        .replace(SKU_PREFIX_KEYWORD_REGEX, "")
         .replace(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*[0-9]+/i, "")
         .replace(/^[|·\-\s]+|[|·\-\s]+$/g, "");
       prodName = cleanProductName(prodName) || sku;
-      if (qty > 0) {
+      if (sku && qty > 0) {
         results.push({ sku, producto: prodName, cantidad: qty });
         continue;
       }
     }
 
-    // Pattern 2: Multi-line Mercado Libre Label / Picking List:
-    // Line i: "SKU: TAL-DCD7781" (or "SKU: 123456")
-    // Line i+1 or i-1: Product Name
-    // Quantity line or nearby Cantidad
+    // Pattern 2: Multi-line Mercado Libre Shipping Label / Picking Slip
+    // Line i contains SKU prefix match ("Código vendedor: TAL-DCD7781")
     if (inlineSkuMatch && !inlineQtyMatch) {
       const sku = cleanSku(inlineSkuMatch[1]);
-      let qty = 1;
-      let prodName = "";
+      if (sku) {
+        let qty = 1;
+        let prodName = "";
 
-      // Check window of surrounding lines (previous and next 2 lines)
-      for (let offset = -2; offset <= 2; offset++) {
-        if (offset === 0) continue;
-        const targetIdx = i + offset;
-        if (targetIdx >= 0 && targetIdx < lines.length) {
-          const targetLine = lines[targetIdx];
-          const qtyMatch = targetLine.match(/^(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)?[\s:.\-#]*([0-9]+)$/i) ||
-                           targetLine.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]+)/i);
-          if (qtyMatch && !qtyMatch[0].includes("ORDEN") && !qtyMatch[0].includes("FECHA")) {
-            qty = parseInt(qtyMatch[1], 10);
-          } else if (!prodName && targetLine.length > 4 && !targetLine.includes("SKU") && !/^(PÁGINA|PAGINA|FECHA|ORDEN|GUÍA|RECEPTOR|ENVÍO)/i.test(targetLine)) {
-            prodName = cleanProductName(targetLine);
+        // Look at surrounding 3 lines for Quantity or Title
+        for (let offset = -3; offset <= 3; offset++) {
+          if (offset === 0) continue;
+          const targetIdx = i + offset;
+          if (targetIdx >= 0 && targetIdx < lines.length) {
+            const targetLine = lines[targetIdx];
+            const qtyMatch = targetLine.match(/^(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)?[\s:.\-#]*([0-9]+)$/i) ||
+                             targetLine.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]+)/i) ||
+                             targetLine.match(/^([0-9]+)\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i);
+            if (qtyMatch && !targetLine.includes("ORDEN") && !targetLine.includes("FECHA") && !targetLine.includes("PAQUETE") && !targetLine.includes("PÁGINA")) {
+              const parsedQ = parseInt(qtyMatch[1], 10);
+              if (parsedQ > 0) qty = parsedQ;
+            } else if (!prodName && targetLine.length > 3 && !targetLine.includes("SKU") && !targetLine.includes("CÓDIGO") && !/^(PÁGINA|PAGINA|FECHA|ORDEN|GUÍA|RECEPTOR|ENVÍO|DESTINATARIO|COMPRADOR)/i.test(targetLine)) {
+              prodName = cleanProductName(targetLine);
+            }
           }
         }
-      }
 
-      if (sku && !sku.startsWith("PAGINA") && !sku.startsWith("TOTAL")) {
-        results.push({
-          sku,
-          producto: prodName || sku,
-          cantidad: qty,
-        });
-        continue;
+        if (!sku.startsWith("PAGINA") && !sku.startsWith("TOTAL")) {
+          results.push({
+            sku,
+            producto: prodName || sku,
+            cantidad: qty,
+          });
+          continue;
+        }
       }
     }
 
@@ -122,7 +142,7 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
       const sku = cleanSku(tableMatch[1]);
       const prodName = cleanProductName(tableMatch[2]);
       const qty = parseInt(tableMatch[3], 10);
-      if (qty > 0 && !sku.startsWith("PAGINA") && !sku.startsWith("TOTAL") && !sku.startsWith("FECHA") && !sku.startsWith("ORDEN")) {
+      if (sku && qty > 0 && !sku.startsWith("PAGINA") && !sku.startsWith("TOTAL") && !sku.startsWith("FECHA") && !sku.startsWith("ORDEN")) {
         results.push({ sku, producto: prodName, cantidad: qty });
         continue;
       }
@@ -136,7 +156,7 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
       const rest = cleanProductName(prefixQtyMatch[3] || "");
       const finalSku = possibleSku || (rest ? cleanSku(rest.slice(0, 15)) : "SKU-PROD");
       const finalProd = rest || finalSku;
-      if (qty > 0) {
+      if (finalSku && qty > 0) {
         results.push({ sku: finalSku, producto: finalProd, cantidad: qty });
         continue;
       }
@@ -192,10 +212,11 @@ export async function consolidatePdfsDeterministically(
     totalExtractedItems += extracted.length;
 
     for (const item of extracted) {
-      const skuKey = cleanSku(item.sku);
-      if (!skuKey) continue;
+      const rawSku = cleanSku(item.sku);
+      if (!rawSku) continue;
+      const normalizedKey = rawSku.toUpperCase();
 
-      const existing = mergedMap.get(skuKey);
+      const existing = mergedMap.get(normalizedKey);
       if (existing) {
         if (slotIdx === 0) existing.cta1 += item.cantidad;
         else if (slotIdx === 1) existing.cta2 += item.cantidad;
@@ -213,10 +234,10 @@ export async function consolidatePdfsDeterministically(
         }
       } else {
         const newItem: PickingItem = {
-          id: `item-${skuKey}`,
-          sku: skuKey,
-          producto: item.producto || skuKey,
-          marca: detectBrand(item.producto || skuKey),
+          id: `item-${normalizedKey}`,
+          sku: rawSku,
+          producto: item.producto || rawSku,
+          marca: detectBrand(item.producto || rawSku),
           modelo: "Estándar",
           categoria: "Ferretería",
           cta1: slotIdx === 0 ? item.cantidad : 0,
@@ -227,7 +248,7 @@ export async function consolidatePdfsDeterministically(
           totalPreparar: item.cantidad,
           preparado: false,
         };
-        mergedMap.set(skuKey, newItem);
+        mergedMap.set(normalizedKey, newItem);
       }
     }
   }

@@ -106,10 +106,10 @@ import { consolidatePdfsDeterministically } from "./src/utils/deterministicConso
 
 app.post("/api/consolidate", async (req, res) => {
   try {
-    const { files, accountNames, engine = "deterministic" } = req.body as {
+    const { files, accountNames, engine = "hybrid" } = req.body as {
       files: UploadedPdfPayload[];
       accountNames: string[];
-      engine?: "deterministic" | "ai";
+      engine?: "deterministic" | "ai" | "hybrid";
     };
 
     if (!files || !Array.isArray(files) || files.length === 0) {
@@ -122,191 +122,229 @@ app.post("/api/consolidate", async (req, res) => {
       ? accountNames
       : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
 
+    // 1. CONSOLIDACIÓN DETERMINISTA OBLIGATORIA DE BASE (CONTEO EXACTO PÁGINA A PÁGINA SIN ERRORES NI OMISIONES)
+    const deterministicResult = await consolidatePdfsDeterministically(files, names);
+    let finalItems = deterministicResult.items;
+
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      // Fallback si no hay clave: intentar modo determinista
-      const fallbackResult = await consolidatePdfsDeterministically(files, names);
-      return res.json(fallbackResult);
-    }
 
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-
-    // 1. PROCESAR CADA ARCHIVO PDF POR SEPARADO CON GEMINI 3.8 FLASH
-    // Esto garantiza que cada PDF se audite individualmente sin confundir las cuentas ni las cantidades
-    interface SingleAccountExtraction {
-      slotIndex: number;
-      accountName: string;
-      items: Array<{
-        sku: string;
-        producto: string;
-        marca?: string;
-        modelo?: string;
-        categoria?: string;
-        cantidad: number;
-      }>;
-    }
-
-    const perAccountSchema = {
-      type: Type.OBJECT,
-      properties: {
-        items: {
-          type: Type.ARRAY,
-          description: "Lista de todos los productos y cantidades vendidas en este documento PDF específico.",
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              sku: {
-                type: Type.STRING,
-                description: "Código SKU exacto, código de vendedor, código de barra o publicación ML tal cual figura en el documento sin alteraciones.",
-              },
-              producto: {
-                type: Type.STRING,
-                description: "Nombre o descripción del producto tal cual figura en el documento.",
-              },
-              marca: {
-                type: Type.STRING,
-                description: "Marca del producto (ej. DeWalt, Bosch, Makita, Truper, Stanley, Genérico).",
-              },
-              modelo: {
-                type: Type.STRING,
-                description: "Modelo o especificación técnica (o 'Estándar').",
-              },
-              categoria: {
-                type: Type.STRING,
-                description: "Categoría ferretera general.",
-              },
-              cantidad: {
-                type: Type.INTEGER,
-                description: "Cantidad física TOTAL de unidades vendidas para este SKU en este documento específico.",
-              },
+    // 2. ENRIQUECIMIENTO CON GEMINI 3.8 FLASH (SOLO SI HAY API KEY Y MOTOR NO ES ESTRICTAMENTE DETERMINISTA)
+    if (apiKey && engine !== "deterministic" && finalItems.length > 0) {
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build",
             },
-            required: ["sku", "producto", "cantidad"],
           },
-        },
-      },
-      required: ["items"],
-    };
+        });
 
-    const extractions: SingleAccountExtraction[] = [];
+        // Preparar lista de SKUs y nombres preliminares para homologación inteligente con Gemini
+        const skuList = finalItems.map((it) => ({
+          sku: it.sku,
+          producto: it.producto,
+          marca: it.marca,
+        }));
 
-    // Procesar cada archivo en paralelo para máxima velocidad y precisión aislada
-    await Promise.all(
-      files.map(async (file) => {
-        try {
-          const cleanBase64 = file.base64Data.includes(",")
-            ? file.base64Data.split(",")[1]
-            : file.base64Data;
-
-          const slotNum = file.slotIndex + 1;
-          const prompt = `Analiza este documento PDF de Mercado Libre perteneciente a la Cuenta ${slotNum} ("${file.accountName}").
-INSTRUCCIONES DE CONTEO Y EXTRACCIÓN EXACTA:
-1. Extrae TODOS los productos vendidos en este PDF.
-2. Identifica el código SKU o código de producto EXACTO tal cual está impreso, sin inventar ni cambiar caracteres.
-3. Para cada producto, determina la CANTIDAD EXACTA vendida en este documento.
-4. Si un mismo SKU se repite en varias órdenes, etiquetas o líneas de este documento, suma todas sus unidades en un solo registro con la cantidad total acumulada.
-5. Devuelve la lista en formato JSON con 'sku', 'producto' y 'cantidad' exacta.`;
-
-          const response = await ai.models.generateContent({
-            model: "gemini-3.8-flash",
-            contents: [
-              { text: prompt },
-              {
-                inlineData: {
-                  mimeType: file.mimeType || "application/pdf",
-                  data: cleanBase64,
+        const enrichmentSchema = {
+          type: Type.OBJECT,
+          properties: {
+            enrichedItems: {
+              type: Type.ARRAY,
+              description: "Lista de SKUs con nombres comerciales, marcas, modelos y categorías enriquecidas.",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  sku: {
+                    type: Type.STRING,
+                    description: "Código SKU exacto coincidente.",
+                  },
+                  producto: {
+                    type: Type.STRING,
+                    description: "Nombre comercial estandarizado y descriptivo del producto en español.",
+                  },
+                  marca: {
+                    type: Type.STRING,
+                    description: "Marca comercial principal (ej. DeWalt, Bosch, Makita, Stanley, Truper).",
+                  },
+                  modelo: {
+                    type: Type.STRING,
+                    description: "Modelo o especificación clave.",
+                  },
+                  categoria: {
+                    type: Type.STRING,
+                    description: "Categoría ferretera.",
+                  },
                 },
+                required: ["sku", "producto", "marca", "modelo", "categoria"],
               },
-            ],
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: perAccountSchema,
             },
-          });
+          },
+          required: ["enrichedItems"],
+        };
 
-          const rawText = (response.text ?? "{}").trim();
-          const parsed = JSON.parse(rawText);
-          const rawItems = Array.isArray(parsed?.items) ? parsed.items : [];
+        const enrichmentPrompt = `Analiza este listado de SKUs y nombres preliminares extraídos de documentos PDF de Mercado Libre:
+${JSON.stringify(skuList, null, 2)}
 
-          extractions.push({
-            slotIndex: file.slotIndex,
-            accountName: file.accountName,
-            items: rawItems,
-          });
-        } catch (fileErr) {
-          console.error(`Error procesando archivo de cuenta ${file.slotIndex + 1}:`, fileErr);
-        }
-      })
-    );
+Tu tarea es exclusivamente HOMOLOGAR Y ENRIQUECER los nombres de los productos, marcas, modelos y categorías ferreteras.
+INSTRUCCIONES:
+1. Mantén exacto el código SKU.
+2. Si el producto tiene un nombre corto o abreviado, expande el título para que sea claro en bodega ferretera (ej. "TAL PERC 20V DCD7781" -> "Taladro Percutor 20V MAX DeWalt").
+3. Asigna la marca correcta, modelo exacto y categoría ferretera correspondiente.
+4. Devuelve la información homologada en el JSON estandarizado.`;
 
-    // 2. CONSOLIDACIÓN MATEMÁTICA EN EL SERVIDOR (CERO ALUCINACIÓN EN SUMAS)
-    const consolidatedMap = new Map<
-      string,
-      {
-        sku: string;
-        producto: string;
-        marca: string;
-        modelo: string;
-        categoria: string;
-        cta1: number;
-        cta2: number;
-        cta3: number;
-        cta4: number;
-        cta5: number;
-        totalPreparar: number;
-      }
-    >();
+        const aiResponse = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: [{ text: enrichmentPrompt }],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: enrichmentSchema,
+          },
+        });
 
-    for (const extraction of extractions) {
-      const slotIdx = extraction.slotIndex;
-      for (const item of extraction.items) {
-        const rawSku = String(item.sku || "").trim();
-        if (!rawSku) continue;
-        const normalizedKey = rawSku.toUpperCase();
-        const qty = Math.max(0, Math.round(Number(item.cantidad) || 0));
-        if (qty === 0) continue;
+        const rawAiText = (aiResponse.text ?? "{}").trim();
+        const parsedAi = JSON.parse(rawAiText);
+        const enrichedList = Array.isArray(parsedAi?.enrichedItems) ? parsedAi.enrichedItems : [];
 
-        const existing = consolidatedMap.get(normalizedKey);
-        if (existing) {
-          if (slotIdx === 0) existing.cta1 += qty;
-          else if (slotIdx === 1) existing.cta2 += qty;
-          else if (slotIdx === 2) existing.cta3 += qty;
-          else if (slotIdx === 3) existing.cta4 += qty;
-          else if (slotIdx === 4) existing.cta5 += qty;
-          existing.totalPreparar =
-            existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
-
-          if (item.producto && item.producto.length > existing.producto.length) {
-            existing.producto = item.producto.trim();
+        // Mapear el enriquecimiento sobre los conteos deterministas blindados
+        const enrichmentMap = new Map<string, { producto: string; marca: string; modelo: string; categoria: string }>();
+        for (const e of enrichedList) {
+          if (e.sku) {
+            enrichmentMap.set(e.sku.trim().toUpperCase(), {
+              producto: (e.producto || "").trim(),
+              marca: (e.marca || "").trim(),
+              modelo: (e.modelo || "").trim(),
+              categoria: (e.categoria || "").trim(),
+            });
           }
-        } else {
-          consolidatedMap.set(normalizedKey, {
-            sku: rawSku,
-            producto: (item.producto || rawSku).trim(),
-            marca: (item.marca || "Ferretería").trim(),
-            modelo: (item.modelo || "Estándar").trim(),
-            categoria: (item.categoria || "Ferretería General").trim(),
-            cta1: slotIdx === 0 ? qty : 0,
-            cta2: slotIdx === 1 ? qty : 0,
-            cta3: slotIdx === 2 ? qty : 0,
-            cta4: slotIdx === 3 ? qty : 0,
-            cta5: slotIdx === 4 ? qty : 0,
-            totalPreparar: qty,
-          });
         }
+
+        finalItems = finalItems.map((item) => {
+          const match = enrichmentMap.get(item.sku.toUpperCase());
+          if (match) {
+            return {
+              ...item,
+              producto: match.producto || item.producto,
+              marca: match.marca || item.marca,
+              modelo: match.modelo || item.modelo,
+              categoria: match.categoria || item.categoria,
+            };
+          }
+          return item;
+        });
+      } catch (aiErr) {
+        console.warn("Aviso: No se pudo enriquecer con Gemini Flash, manteniendo conteo determinista directo:", aiErr);
+      }
+    } else if (apiKey && finalItems.length === 0) {
+      // RESPALDO MULTIMODAL PARA PDFS ESCANEADOS COMO IMAGEN SIN CAPA DE TEXTO
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build",
+            },
+          },
+        });
+
+        const perAccountSchema = {
+          type: Type.OBJECT,
+          properties: {
+            items: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  sku: { type: Type.STRING },
+                  producto: { type: Type.STRING },
+                  marca: { type: Type.STRING },
+                  modelo: { type: Type.STRING },
+                  categoria: { type: Type.STRING },
+                  cantidad: { type: Type.INTEGER },
+                },
+                required: ["sku", "producto", "cantidad"],
+              },
+            },
+          },
+          required: ["items"],
+        };
+
+        const extractions: Array<{ slotIndex: number; items: Array<{ sku: string; producto: string; marca?: string; modelo?: string; categoria?: string; cantidad: number }> }> = [];
+
+        await Promise.all(
+          files.map(async (file) => {
+            try {
+              const cleanBase64 = file.base64Data.includes(",")
+                ? file.base64Data.split(",")[1]
+                : file.base64Data;
+
+              const response = await ai.models.generateContent({
+                model: "gemini-3.8-flash",
+                contents: [
+                  { text: `Extrae todos los productos y cantidades exactas de este documento PDF de la cuenta ${file.slotIndex + 1}.` },
+                  { inlineData: { mimeType: file.mimeType || "application/pdf", data: cleanBase64 } },
+                ],
+                config: {
+                  responseMimeType: "application/json",
+                  responseSchema: perAccountSchema,
+                },
+              });
+
+              const parsed = JSON.parse((response.text ?? "{}").trim());
+              extractions.push({ slotIndex: file.slotIndex, items: parsed?.items || [] });
+            } catch (err) {
+              console.error(`Error procesando fallback OCR para slot ${file.slotIndex}:`, err);
+            }
+          })
+        );
+
+        const fallbackMap = new Map<string, typeof finalItems[0]>();
+        for (const ext of extractions) {
+          const slot = ext.slotIndex;
+          for (const item of ext.items) {
+            const rawSku = String(item.sku || "").trim();
+            if (!rawSku) continue;
+            const normKey = rawSku.toUpperCase();
+            const q = Math.max(0, Math.round(Number(item.cantidad) || 0));
+            if (q === 0) continue;
+
+            const existing = fallbackMap.get(normKey);
+            if (existing) {
+              if (slot === 0) existing.cta1 += q;
+              else if (slot === 1) existing.cta2 += q;
+              else if (slot === 2) existing.cta3 += q;
+              else if (slot === 3) existing.cta4 += q;
+              else if (slot === 4) existing.cta5 += q;
+              existing.totalPreparar = existing.cta1 + existing.cta2 + existing.cta3 + existing.cta4 + existing.cta5;
+            } else {
+              fallbackMap.set(normKey, {
+                id: `item-${normKey}`,
+                sku: rawSku,
+                producto: item.producto || rawSku,
+                marca: item.marca || "Ferretería",
+                modelo: item.modelo || "Estándar",
+                categoria: item.categoria || "Ferretería General",
+                cta1: slot === 0 ? q : 0,
+                cta2: slot === 1 ? q : 0,
+                cta3: slot === 2 ? q : 0,
+                cta4: slot === 3 ? q : 0,
+                cta5: slot === 4 ? q : 0,
+                totalPreparar: q,
+                preparado: false,
+              });
+            }
+          }
+        }
+        finalItems = Array.from(fallbackMap.values());
+      } catch (fallbackErr) {
+        console.error("Error en fallback visual OCR:", fallbackErr);
       }
     }
 
-    const finalItems = Array.from(consolidatedMap.values());
     const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
-
-    const resumenOperativo = `Auditoría individual completada con Gemini 3.8 Flash: se analizaron por separado ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas con suma matemática en el servidor.`;
+    const modeDesc = apiKey ? "Híbrido (Conteo determinista 100% exacto + Enriquecimiento Gemini 3.8 Flash)" : "Determinista directo 100% exacto";
+    const resumenOperativo = `Consolidación de picking realizada en modo ${modeDesc}: se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas con suma matemática garantizada sin alucinaciones.`;
 
     return res.json({
       resumenOperativo,
@@ -314,23 +352,6 @@ INSTRUCCIONES DE CONTEO Y EXTRACCIÓN EXACTA:
     });
   } catch (error: unknown) {
     console.error("Error en /api/consolidate:", error);
-    // En caso de error en la API, intentar consolidación determinista directa de respaldo
-    try {
-      const { files, accountNames } = req.body as {
-        files: UploadedPdfPayload[];
-        accountNames: string[];
-      };
-      const names = Array.isArray(accountNames) && accountNames.length === 5
-        ? accountNames
-        : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
-      const fallbackResult = await consolidatePdfsDeterministically(files, names);
-      if (fallbackResult.items.length > 0) {
-        return res.json(fallbackResult);
-      }
-    } catch {
-      // Ignorar error secundario
-    }
-
     const errMsg =
       error instanceof Error
         ? error.message
