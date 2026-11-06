@@ -154,18 +154,24 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
         let qty = 1;
         let prodName = "";
 
-        // Check surrounding lines (-4 to +4) for quantity
-        for (let offset = -4; offset <= 4; offset++) {
+        // Check surrounding lines (-4 to +10) for quantity, stopping at next shipment boundary
+        for (let offset = -4; offset <= 10; offset++) {
           if (offset === 0) continue;
           const targetIdx = i + offset;
           if (targetIdx >= 0 && targetIdx < lines.length) {
             const targetLine = lines[targetIdx];
+            if (offset > 0 && (targetLine.toLowerCase().includes("sku:") || targetLine.toLowerCase().includes("envio:"))) {
+              break; // Stop at next shipment block
+            }
             const qtyMatch = targetLine.match(/^(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)?[\s:.\-#]*([0-9]{1,4})$/i) ||
                              targetLine.match(/(?:CANT|CANTIDAD|CANT\.|UDS|UNIDADES|UNID)[\s:.\-#]*([0-9]{1,4})/i) ||
                              targetLine.match(/^([0-9]{1,4})\s*(?:u\.|un\.|uds\.|unidades|unid\.)/i);
             if (qtyMatch && !targetLine.includes("ORDEN") && !targetLine.includes("FECHA") && !targetLine.includes("PAQUETE") && !targetLine.includes("PAGINA")) {
               const parsedQ = parseInt(qtyMatch[1], 10);
-              if (parsedQ > 0 && parsedQ < 100000) qty = parsedQ;
+              if (parsedQ > 0 && parsedQ < 100000) {
+                qty = parsedQ;
+                break;
+              }
             }
           }
         }

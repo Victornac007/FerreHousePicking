@@ -476,47 +476,51 @@ export async function parsePdfLocally(
       const numPages = pdfDoc.numPages;
 
       for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        const page = await pdfDoc.getPage(pageNum);
-        const textContent = await page.getTextContent();
-        
-        // Group items spatially by Y-coordinate to preserve full SKU lines
-        const itemsList = textContent?.items || [];
-        const linesMap: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          
+          const itemsList = textContent?.items || [];
+          const linesMap: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
 
-        for (const item of itemsList) {
-          if (!item || typeof item !== "object" || !("str" in item)) continue;
-          const str = String(item.str);
-          if (!str.trim()) continue;
+          for (const item of itemsList) {
+            if (!item || typeof item !== "object" || !("str" in item)) continue;
+            const str = String(item.str);
+            if (!str.trim()) continue;
 
-          const transform = (item as any).transform;
-          const x = Array.isArray(transform) && typeof transform[4] === "number" ? transform[4] : 0;
-          const y = Array.isArray(transform) && typeof transform[5] === "number" ? Math.round(transform[5]) : 0;
+            const transform = (item as any).transform;
+            const x = Array.isArray(transform) && typeof transform[4] === "number" ? transform[4] : 0;
+            const y = Array.isArray(transform) && typeof transform[5] === "number" ? Math.round(transform[5]) : 0;
 
-          let lineObj = linesMap.find((l) => Math.abs(l.y - y) <= 3);
-          if (!lineObj) {
-            lineObj = { y, items: [] };
-            linesMap.push(lineObj);
+            let lineObj = linesMap.find((l) => Math.abs(l.y - y) <= 3);
+            if (!lineObj) {
+              lineObj = { y, items: [] };
+              linesMap.push(lineObj);
+            }
+            lineObj.items.push({ x, str });
           }
-          lineObj.items.push({ x, str });
-        }
 
-        linesMap.sort((a, b) => b.y - a.y);
-        const pageLinesText = linesMap.map((l) => {
-          l.items.sort((a, b) => a.x - b.x);
-          return l.items.map((i) => i.str).join(" ");
-        }).join("\n");
+          linesMap.sort((a, b) => b.y - a.y);
+          const pageLinesText = linesMap.map((l) => {
+            l.items.sort((a, b) => a.x - b.x);
+            return l.items.map((i) => i.str).join(" ");
+          }).join("\n");
 
-        const pageItems = extractProductsFromText(pageLinesText);
+          let pageItems = extractProductsFromText(pageLinesText);
 
-        if (pageItems.length > 0) {
-          slotExtracted.push(...pageItems);
-        } else {
-          // Fallback: try joined raw page strings
-          const pageStrings = itemsList
-            .map((item: any) => ("str" in item ? item.str : ""))
-            .filter(Boolean);
-          const fallbackItems = extractProductsFromText(pageStrings.join("\n"));
-          slotExtracted.push(...fallbackItems);
+          if (pageItems.length === 0) {
+            // Fallback: try raw line-by-line join without spatial Y grouping
+            const pageStrings = itemsList
+              .map((item: any) => ("str" in item ? item.str : ""))
+              .filter(Boolean);
+            pageItems = extractProductsFromText(pageStrings.join("\n"));
+          }
+
+          if (pageItems.length > 0) {
+            slotExtracted.push(...pageItems);
+          }
+        } catch (pageErr) {
+          console.warn(`Error en página ${pageNum} de ranura ${slotIdx + 1}:`, pageErr);
         }
       }
     } catch (parseErr) {
