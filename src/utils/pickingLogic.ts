@@ -48,13 +48,17 @@ export type SortDirection = "asc" | "desc";
 /**
  * Normalizes and validates raw items extracted locally or from manual entry,
  * guaranteeing that totalPreparar always equals cta1 + cta2 + cta3 + cta4 + cta5.
+ * Uses string normalization (trimming, uppercase, accent removal, punctuation cleaning)
+ * on SKUs and product titles prior to grouping to prevent minor duplicates.
  */
 export function normalizePickingItems(rawItems: Array<Partial<PickingItem>>): PickingItem[] {
   const mergedBySku = new Map<string, PickingItem>();
 
   for (let i = 0; i < rawItems.length; i++) {
     const raw = rawItems[i];
-    const cleanSku = (raw.sku || `SKU-${String(i + 1).padStart(3, "0")}`).trim().toUpperCase();
+    const rawSku = (raw.sku || "").trim();
+    const cleanSkuStr = cleanSku(rawSku) || rawSku || `SKU-${String(i + 1).padStart(3, "0")}`;
+    const normSkuKey = normalizeStringKey(cleanSkuStr) || cleanSkuStr.toUpperCase();
 
     const c1 = Math.max(0, Math.round(Number(raw.cta1) || 0));
     const c2 = Math.max(0, Math.round(Number(raw.cta2) || 0));
@@ -65,7 +69,7 @@ export function normalizePickingItems(rawItems: Array<Partial<PickingItem>>): Pi
 
     if (computedTotal === 0) continue;
 
-    const existing = mergedBySku.get(cleanSku);
+    const existing = mergedBySku.get(normSkuKey);
     if (existing) {
       existing.cta1 += c1;
       existing.cta2 += c2;
@@ -78,12 +82,19 @@ export function normalizePickingItems(rawItems: Array<Partial<PickingItem>>): Pi
         existing.cta3 +
         existing.cta4 +
         existing.cta5;
+
+      const rawTitle = (raw.producto || cleanSkuStr).trim();
+      if (rawTitle && rawTitle.length > existing.producto.length) {
+        existing.producto = rawTitle;
+        existing.marca = detectBrand(rawTitle);
+      }
     } else {
-      mergedBySku.set(cleanSku, {
-        id: raw.id || `item-${cleanSku}-${i}`,
-        sku: cleanSku,
-        producto: (raw.producto || "Producto sin nombre").trim(),
-        marca: (raw.marca || "Genérico").trim(),
+      const rawTitle = (raw.producto || cleanSkuStr).trim();
+      mergedBySku.set(normSkuKey, {
+        id: raw.id || `item-${normSkuKey}-${i}`,
+        sku: cleanSkuStr,
+        producto: rawTitle,
+        marca: (raw.marca || detectBrand(rawTitle)).trim(),
         modelo: (raw.modelo || "Estándar").trim(),
         categoria: (raw.categoria || "Ferretería General").trim(),
         cta1: c1,
@@ -398,7 +409,7 @@ export function auditPickingConsolidation(
 }
 
 import * as pdfjsLib from "pdfjs-dist";
-import { cleanSku, extractProductsFromText, detectBrand } from "./deterministicConsolidator";
+import { cleanSku, extractProductsFromText, detectBrand, normalizeStringKey } from "./deterministicConsolidator";
 
 // Configure workerSrc for pdfjs-dist in browser context using jsdelivr npm CDN
 if (typeof window !== "undefined" && pdfjsLib) {
@@ -524,7 +535,7 @@ export async function parsePdfLocally(
       // Strict SKU extraction & normalization for 100% unique grouping
       const rawSku = cleanSku(item.sku);
       if (!rawSku) continue;
-      const normalizedKey = rawSku.toUpperCase();
+      const normalizedKey = normalizeStringKey(rawSku) || rawSku.toUpperCase();
       const qtyToAdd = Math.max(0, Math.round(Number(item.cantidad) || 1));
 
       const existing = mergedMap.get(normalizedKey);

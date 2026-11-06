@@ -1,127 +1,70 @@
-# Plan de Conteo y Agrupación de SKUs de Mercado Libre (5 Cuentas)
+# Normalización Estricta de SKUs y Nombres de Productos en Consolidación
 
-Sistema web especializado para cargar, procesar, agrupar y contar de forma exacta cada SKU proveniente de hasta 5 archivos PDF correspondientes a 5 cuentas distintas de Mercado Libre. Garantiza la unificación estricta por código SKU, agrupando productos aunque tengan nombres o descripciones diferentes en distintas cuentas.
+Implementación de una función de normalización de cadenas de texto (limpieza de espacios, conversión a mayúsculas, eliminación de diacríticos/acentos y estandarización de caracteres especiales) aplicada antes del proceso de agrupación y consolidación de pedidos en `src/utils/pickingLogic.ts`, `src/utils/deterministicConsolidator.ts` y `server.ts`.
 
-## Confirmaciones del Usuario y Decisiones Críticas
+## Decisiones Críticas y Confirmaciones
 
 > [!IMPORTANT]
-> **Elecciones confirmadas en Fase 1:**
-> - **Método de Procesamiento:** Procesamiento híbrido combinando Gemini AI (`gemini-3.8-flash`) a través de un servidor backend seguro en Node.js/Express y un motor de extracción local en navegador (`pdfjs-dist`) para máxima velocidad y precisión sin pérdida de datos.
-> - **Visualización de Resultados:** Tabla consolidada general con desglose interactivo por pestañas independientes para las 5 cuentas de Mercado Libre y filtros en tiempo real.
-> - **Exportación:** Reporte en formato PDF descargable e impresión optimizada en formato vertical (A4 / Letter portrait) enfocado en listas de selección (*Pick List*) y verificación de stock para almacén.
+> **Criterio de Normalización Estandarizado (Default Recomendado)**:
+> - **Normalización de SKU**: Remueve espacios extras, convierte a mayúsculas, elimina tildes/acentos (NFD normalization) y estandariza separadores (dashes/puntos) para generar una clave de comparación idéntica entre registros.
+> - **Conservación de Título Principal**: Cuando dos filas comparten el mismo SKU normalizado pero varían levemente en el nombre, la aplicación conserva automáticamente el título más largo y descriptivo, guardando las variaciones en el visor desplegable de detalles de la fila.
 
 ---
 
-## 1. Visión General del Producto
+## 1. Visión General y Objetivo
 
-- **Propósito Principal:** Eliminar los errores en el conteo manual de inventario de Mercado Libre unificando archivos PDF de ventas, etiquetas o listas de empaque de hasta 5 cuentas independientes.
-- **Regla Fundamental de SKU:** El sistema prioriza el código SKU sobre el título del producto. Si dos registros de cuentas distintas o del mismo archivo poseen el mismo SKU (ej. `SKU-10293`), se agrupan en una única fila consolidada sumando sus cantidades exactas e identificando las variantes de nombre y el desglose por cuenta.
-- **Flujo de Trabajo:** 
-  1. Carga múltiple o simultánea de los 5 archivos PDF (asignando o autodetectando cada cuenta).
-  2. Procesamiento híbrido inteligente de extracción.
-  3. Vista consolidada instantánea con métricas globales (Total de SKUs únicos, Unidades totales a despachar, Cuentas procesadas).
-  4. Generación de reporte vertical para impresión física y descarga PDF.
+El objetivo principal es eliminar duplicados en la planilla maestra de picking cuando distintas cuentas o etiquetas presentan pequeñas variaciones en el SKU o en la descripción del producto (por ejemplo, diferencias en tildes, minúsculas/mayúsculas, dobles espacios o signos de puntuación como comillas `´´` o guiones).
 
 ---
 
 ## 2. Experiencia de Usuario y Diseño Visual
 
-- **Estilo:** Interfaz limpia, profesional y utilitaria para gestión de inventarios y almacén (SaaS / Operations Dashboard).
-- **Tipografía:** 
-  - Títulos y navegación: `Plus Jakarta Sans` / `Outfit`.
-  - Datos numéricos y SKUs: `JetBrains Mono` con números tabulares (`font-mono tabular-nums`) para evitar desplazamientos al comparar cifras.
-- **Paleta de Colores (Disciplina 60-30-10):**
-  - **Lienzo (60%):** Fondo blanco neutro en modo claro (`#F8FAFC` / `#FFFFFF`) o pizarra en modo oscuro (`#0F172A`).
-  - **Estructura (30%):** Tarjetas con bordes ultra-delgados (`#E2E8F0` / `#1E293B`) sin redundancia de sombra.
-  - **Acentos (10%):** Amarillo Mercado Libre / Azul profesional para botones de acción principal, resaltado de SKUs y badges de cuenta.
-- **Pestañas y Filtros:**
-  - Pestaña principal: **"Consolidado Total"** (Muestra todos los SKUs unificados con la suma global de unidades).
-  - Pestañas secundarias: **"Cuenta 1"**, **"Cuenta 2"**, **"Cuenta 3"**, **"Cuenta 4"**, **"Cuenta 5"** (Filtran la tabla para mostrar únicamente lo correspondiente a esa cuenta específica).
-  - Barra de búsqueda rápida por SKU o término de producto.
+- **Consolidación Unificada**: Las tablas y resúmenes mostrarán un único registro consolidado por cada producto con la suma total de unidades físicas de las 5 cuentas.
+- **Transparencia en Variantes**: Al hacer clic en el indicador de variante de la fila, el operador podrá consultar los nombres exactos y las cantidades provenientes de cada cuenta sin alterar la suma general.
+- **Exportaciones e Impresión Limpias**: Las exportaciones a PDF Vertical y Excel CSV utilizarán el SKU y título normalizado y limpio, garantizando legibilidad en bodega.
 
 ---
 
-## 3. Decisiones Clave de Arquitectura y Estrategia de Datos
+## 3. Decisiones Técnicas y Rationale
 
-1. **Extracción Híbrida Inteligente (Servidor Express + AI Studio):**
-   - El backend Express expondrá una ruta `/api/extract-skus` que procesa las páginas del PDF.
-   - Utilizará el SDK oficial `@google/genai` con `gemini-3.8-flash` recibiendo las imágenes o texto codificado de los PDF para estructurar esquemas JSON estrictos con: `{ sku: string, nombreProducto: string, cantidad: number, numeroOrden?: string }`.
-   - En caso de desconexión o PDF puramente de texto vectorial, el navegador ejecuta una fallback con `pdfjs-dist` y patrones de expresiones regulares avanzados especificos de Mercado Libre.
-
-2. **Algoritmo de Normalización y Agrupación:**
-   ```typescript
-   interface SKUGroupItem {
-     sku: string;
-     nombresDetectados: string[]; // Nombres asociados en diferentes cuentas
-     totalCantidad: number;
-     desglosePorCuenta: Record<string, number>; // { "Cuenta 1": 12, "Cuenta 2": 5, ... }
-   }
-   ```
-   - Normalización de SKU: Eliminación de espacios extras, conversión a mayúsculas.
-   - Si se encuentra un SKU idéntico, se incrementa `totalCantidad` y se registra la cantidad correspondiente en la cuenta de origen.
-
-3. **Impresión y Generación de PDF Vertical:**
-   - Hoja de estilo CSS `@media print` para diseño vertical limpio de alta densidad en A4/Carta.
-   - Opciones para imprimir directamente o exportar a archivo PDF mediante `html2pdf.js` / `jsPDF`.
-   - Incluye código de barras visual para cada SKU en la impresión, facilitando el escaneo con lector en almacén.
+- **Normalización NFD de Unicode**: Uso de `str.normalize("NFD").replace(/[\u0300-\u036f]/g, "")` para desarticular tildes y diacríticos (ej. `ó` $\rightarrow$ `O`).
+- **Estandarización de Separadores**: Limpieza de guiones redundantes y caracteres de control (comillas encorvadas `´´`, comillas tipográficas, comas innecesarias) antes de la indexación `Map<string, PickingItem>`.
+- **Paridad Cliente-Servidor**: Aplicación de la misma regla tanto en la función de consolidación local (`src/utils/pickingLogic.ts`) como en el backend Express (`server.ts` y `deterministicConsolidator.ts`).
 
 ---
 
-## 4. Arquitectura Técnica y Diagrama de Componentes
+## 4. Arquitectura de Datos y Normalización
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                             CLIENTE REACT (Vite UI)                             │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│   ┌─────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐   │
-│   │ FileUploadDropzone  │  │ AccountTabs & Filter │  │  VerticalPrintReport │   │
-│   └──────────┬──────────┘  └──────────┬───────────┘  └──────────┬───────────┘   │
-│              │                        │                         │               │
-│              ▼                        ▼                         ▼               │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │                      ConsolidatedSKUTable Component                      │   │
-│   └──────────────────────────────────┬──────────────────────────────────────┘   │
-│                                      │                                          │
-└──────────────────────────────────────┼──────────────────────────────────────────┘
-                                       │ POST /api/extract-skus (PDF Files)
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                             SERVIDOR EXPRESS (server.ts)                        │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │                 /api/extract-skus Endpoint                             │   │
-│   │   - Utiliza @google/genai SDK ('gemini-3.8-flash')                       │   │
-│   │   - Recibe buffers de PDF de las 5 cuentas                              │   │
-│   │   - Retorna array JSON estructurado de SKUs y Cantidades                │   │
-│   └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│ Archivos PDF de Mercado Libre (Cuentas 1 a 5)         │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ Extracción de Texto / Gemini AI / pdfjs-dist           │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ Normalización Previa de String (SKU + Producto)        │
+│ 1. trim() + toUpperCase()                              │
+│ 2. Unicode NFD Accent Removal (á->A, ñ->N)            │
+│ 3. Clean Special Punctuation & Extra Spaces           │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ Consolidación e Indexación (Map<NormKey, PickingItem>) │
+│ Suma acumulativa: cta1 + cta2 + cta3 + cta4 + cta5      │
+└────────────────────────────────────────────────────────┘
 ```
 
----
-
-## 5. Plan de Ejecución
-
-1. **Configuración del Entorno & Servidor Full-Stack:**
-   - Instalar paquetes backend y frontend necesarios (`@google/genai`, `pdfjs-dist`, `lucide-react`, `jspdf`, `html2canvas`).
-   - Configurar `server.ts` con Express y Vite middleware.
-   - Actualizar `metadata.json` con `"MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"`.
-
-2. **Implementación de Extracción de SKUs (Backend & Engine):**
-   - Crear la ruta backend `/api/extract-skus` con el cliente Gemini AI.
-   - Implementar el motor de resolución local en cliente (`pdfParser.ts`) para procesamiento de emergencia o pruebas locales sin conexión.
-
-3. **Desarrollo de la Interfaz Dashboard (UI):**
-   - Construir la zona de carga para 5 archivos PDF etiquetados por Cuenta de Mercado Libre.
-   - Desarrollar la tabla consolidada de SKUs con ordenamiento, búsqueda por SKU, paginación y desglose de nombres variantes.
-   - Agregar pestañas para cambiar entre Vista Consolidada y Vistas por Cuenta Individual.
-
-4. **Desarrollo del Reporte de Impresión Vertical:**
-   - Diseñar la vista de impresión optimizada para almacén (Listado vertical con casilla de verificación, SKU grande, nombre, cantidad total y desglosada por cuenta).
-   - Generación de PDF e integración con `@media print`.
-
-5. **Pruebas y Verificación:**
-   - Probar la agrupación de SKUs con nombres diferentes.
-   - Ejecutar `compile_applet` y `lint_applet` para garantizar cero errores de construcción.
+### Funciones a Modificar
+1. `src/utils/pickingLogic.ts`:
+   - Añadir `normalizeKeyString(val: string): string`
+   - Actualizar `normalizePickingItems` y `parsePdfLocally` para normalizar las claves de agrupación.
+2. `src/utils/deterministicConsolidator.ts`:
+   - Aplicar `normalizeKeyString` en `cleanSku` y `cleanProductName`.
+3. `server.ts`:
+   - Asegurar que la respuesta devuelta por la API de Gemini sea procesada con la misma función de normalización.

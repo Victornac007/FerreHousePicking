@@ -360,7 +360,7 @@ export default function App() {
         },
         body: JSON.stringify({
           accountNames: slots.map((s) => s.name),
-          useGeminiAI: true,
+          useGeminiAI: false,
           files: activeFiles.map((s) => ({
             slotIndex: s.index,
             accountName: s.name,

@@ -64,6 +64,22 @@ export function cleanProductName(val: string): string {
   return p;
 }
 
+/**
+ * Normalizes strings before grouping to prevent duplicates caused by minor variations
+ * in accents/diacritics, letter casing, extra whitespace, or special characters.
+ */
+export function normalizeStringKey(val: string): string {
+  if (!val) return "";
+  return val
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function detectBrand(text: string): string {
   const t = text.toLowerCase();
   const known = [
@@ -392,7 +408,7 @@ export async function consolidatePdfsDeterministically(
     for (const item of fileExtracted) {
       const rawSku = cleanSku(item.sku);
       if (!rawSku) continue;
-      const normalizedKey = rawSku.toUpperCase();
+      const normalizedKey = normalizeStringKey(rawSku) || rawSku.toUpperCase();
 
       const existing = mergedMap.get(normalizedKey);
       if (existing) {

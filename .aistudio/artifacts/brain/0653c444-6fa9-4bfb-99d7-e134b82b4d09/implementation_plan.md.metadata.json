@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for Mercado Libre Multi-Account SKU Agrupator and Counter with hybrid Gemini AI + PDF parsing, consolidated total table, per-account filtering, and vertical PDF export/printing.",
-  "updatedAt": "2026-11-05T03:38:14.647778628Z",
+  "summary": "Plan de implementación para la normalización estricta de SKUs y nombres de productos en src/utils/pickingLogic.ts, src/utils/deterministicConsolidator.ts y server.ts para evitar duplicaciones por variaciones menores.",
+  "updatedAt": "2026-11-06T23:15:56.856194983Z",
   "requestFeedback": true,
   "userFacing": true
 }

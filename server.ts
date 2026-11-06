@@ -3,7 +3,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
-import { consolidatePdfsDeterministically, cleanSku, detectBrand } from "./src/utils/deterministicConsolidator";
+import { consolidatePdfsDeterministically, cleanSku, detectBrand, normalizeStringKey } from "./src/utils/deterministicConsolidator";
 import { auditPickingConsolidation, PickingItem, RawExtractedProduct } from "./src/utils/pickingLogic";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -54,7 +54,11 @@ app.post("/api/consolidate", async (req, res) => {
       ? accountNames
       : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
 
-    // Intentar primero extracción Híbrida con Gemini AI si el cliente está configurado y useGeminiAI no es false
+    // 1. Ejecutar procesamiento determinista directo para establecer la línea base de conteo 100% verificado
+    const deterministicResult = await consolidatePdfsDeterministically(files, names);
+    const deterministicUnits = deterministicResult.items.reduce((acc, i) => acc + i.totalPreparar, 0);
+
+    // 2. Intentar extracción Híbrida con Gemini AI si el cliente está configurado
     if (aiClient && useGeminiAI !== false) {
       try {
         console.log("Iniciando extracción con Gemini AI (gemini-3.8-flash)...");
@@ -70,7 +74,7 @@ app.post("/api/consolidate", async (req, res) => {
             : file.base64Data;
 
           const prompt = `Analiza este documento PDF de Mercado Libre (cuenta: ${names[slotIdx]}).
-Extrae absolutamente TODOS los productos listados.
+Extrae absolutamente TODOS los productos listados en TODAS las páginas sin omitir ninguna etiqueta ni envío.
 
 REGLAS DE EXTRACCIÓN Y AGRUPACIÓN POR SKU:
 1. Para cada producto, extrae obligatoriamente el código SKU completo que figura exactamente debajo del título del producto (marcado como "SKU: ...").
@@ -130,7 +134,7 @@ Responde únicamente en el formato JSON estructurado especificado.`;
               accountName: names[slotIdx],
             });
 
-            const normKey = rawSku.toUpperCase();
+            const normKey = normalizeStringKey(rawSku) || rawSku.toUpperCase();
             const existing = mergedMap.get(normKey);
 
             if (existing) {
@@ -192,44 +196,27 @@ Responde únicamente en el formato JSON estructurado especificado.`;
         }
 
         const finalItems = Array.from(mergedMap.values());
-        if (finalItems.length > 0) {
-          const auditReport = auditPickingConsolidation(allRawExtracted, finalItems);
-          const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
+        const geminiUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
 
+        // Seguridad: Si Gemini AI devuelve menos unidades que la extracción determinista de todas las páginas,
+        // usar el resultado determinista completo para garantizar que no falte ningún producto.
+        if (geminiUnits >= deterministicUnits && finalItems.length > 0) {
+          const auditReport = auditPickingConsolidation(allRawExtracted, finalItems);
           return res.json({
-            resumenOperativo: `Consolidación Híbrida Inteligente (Gemini AI gemini-3.8-flash): Se procesaron ${files.length} archivo(s) PDF de Mercado Libre, unificando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas entre las 5 cuentas.`,
+            resumenOperativo: `Consolidación Híbrida Inteligente (Gemini AI gemini-3.8-flash): Se procesaron ${files.length} archivo(s) PDF de Mercado Libre, unificando ${finalItems.length} SKUs únicos y ${geminiUnits} unidades físicas exactas entre las 5 cuentas.`,
             items: finalItems,
             auditReport,
             mode: "gemini",
           });
+        } else {
+          console.warn(`Gemini AI extrajo ${geminiUnits} unidades, pero el escaneo determinista halló ${deterministicUnits} unidades completas. Utilizando resultado determinista completo.`);
         }
       } catch (geminiErr) {
         console.warn("Fallo temporal en Gemini AI, alternando a modo determinista local:", geminiErr);
       }
     }
 
-    // Fallback 100% PROCESAMIENTO DETERMINISTA LOCAL (NODE.JS + PDF-PARSE)
-    const deterministicResult = await consolidatePdfsDeterministically(files, names);
-    const finalItems = deterministicResult.items;
-
-    const auditReport = auditPickingConsolidation(
-      deterministicResult.rawExtractedItems,
-      finalItems
-    );
-
-    const totalPhysicalUnits = finalItems.reduce((acc, i) => acc + i.totalPreparar, 0);
-    const auditStatusStr = auditReport.isValid
-      ? "Auditoría de integridad: 100% exacto (0 discrepancias)"
-      : `Discrepancia detectada: ${auditReport.alertMessage}`;
-
-    const resumenOperativo = `Consolidación determinista local: se procesaron ${files.length} archivo(s) PDF de Mercado Libre, consolidando ${finalItems.length} SKUs únicos y ${totalPhysicalUnits} unidades físicas exactas. ${auditStatusStr}.`;
-
-    return res.json({
-      resumenOperativo,
-      items: finalItems,
-      auditReport,
-      mode: "deterministic",
-    });
+    return res.json(deterministicResult);
   } catch (error: unknown) {
     console.error("Error en /api/consolidate:", error);
     const errMsg =
