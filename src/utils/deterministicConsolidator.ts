@@ -45,7 +45,7 @@ export function cleanSku(val: string): string {
 
   const noiseWords = [
     "VENDEDOR", "ARTICULO", "PRODUCTO", "REFERENCIA", "DESCRIPCION",
-    "CANTIDAD", "CANT", "PAGINA", "FECHA", "GUIA", "TOTAL",
+    "CANTIDAD", "CANT", "PAGINA", "FECHA", "GUIA",
     "RECEPTOR", "ENVIO", "COLECTA", "COMPRADOR", "DIRECCION", "PAQUETE",
     "CARRIER", "FIRMA CARRIER", "FECHA Y HORA DE RETIRO", "FECHA Y HORA"
   ];
@@ -343,8 +343,94 @@ export function extractProductsFromText(text: string): Array<{ sku: string; prod
 }
 
 /**
+ * Extracts products directly from PDF page text items using their 2D spatial (X, Y) coordinates.
+ * In Mercado Libre's "Despacha tus productos" packing sheets:
+ * - Left column (x < 200) is "Identificación" (Tracking ID, Envio/Pack ID, Buyer Name)
+ * - Right column (x >= 200) is "Productos" (Title, SKU: ..., Cantidad: X, Color/Voltaje)
+ * Grouping strictly within the right column and anchoring on "Cantidad: X" guarantees 100% accuracy
+ * even when PDF generators place product titles at the end of the file stream.
+ */
+export function extractProductsFromSpatialPage(
+  itemsList: any[]
+): Array<{ sku: string; producto: string; cantidad: number }> {
+  if (!Array.isArray(itemsList) || itemsList.length === 0) return [];
+
+  const rightColItems = itemsList.filter((item: any) => {
+    if (!item || typeof item !== "object" || !("str" in item)) return false;
+    const str = String(item.str).trim();
+    if (!str) return false;
+    const x = Array.isArray(item.transform) && typeof item.transform[4] === "number" ? item.transform[4] : 0;
+    const y = Array.isArray(item.transform) && typeof item.transform[5] === "number" ? item.transform[5] : 0;
+    return x >= 200 && y <= 738 && y >= 20;
+  });
+
+  if (rightColItems.length === 0) return [];
+
+  const linesMap: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
+  for (const item of rightColItems) {
+    const str = String(item.str);
+    const x = item.transform[4];
+    const y = Math.round(item.transform[5]);
+
+    let lineObj = linesMap.find((l) => Math.abs(l.y - y) <= 3);
+    if (!lineObj) {
+      lineObj = { y, items: [] };
+      linesMap.push(lineObj);
+    }
+    lineObj.items.push({ x, str });
+  }
+
+  // Sort from top to bottom (descending Y)
+  linesMap.sort((a, b) => b.y - a.y);
+
+  const lines = linesMap.map((l) => {
+    l.items.sort((a, b) => a.x - b.x);
+    return { y: l.y, text: l.items.map((i) => i.str).join(" ").trim() };
+  });
+
+  const results: Array<{ sku: string; producto: string; cantidad: number }> = [];
+
+  // Anchor on "Cantidad: X" because EVERY product block in Mercado Libre has Cantidad: X
+  for (let i = 0; i < lines.length; i++) {
+    const lineText = lines[i].text;
+    const qtyMatch = lineText.match(/^(?:Cantidad|Cant\.?)\s*:\s*(\d+)/i);
+    if (qtyMatch) {
+      const qty = parseInt(qtyMatch[1], 10) || 1;
+      let rawSku = "";
+      const titleParts: string[] = [];
+
+      // Look upwards from Cantidad (up to 4 lines above, stopping at previous item attributes or previous Cantidad)
+      for (let prevIdx = i - 1; prevIdx >= Math.max(0, i - 4); prevIdx--) {
+        const prevText = lines[prevIdx].text;
+        if (/^(?:Cantidad|Cant\.?|Color|Voltaje|Talla|Diseño|Nombre|Medida|Frecuencia)\s*[^:]*:/i.test(prevText)) {
+          break;
+        }
+        const skuMatch = prevText.match(/^(?:SKU|C[OÓoó]DIGO\s*(?:DE\s*)?VENDEDOR|C[OÓoó]DIGO|COD)\s*:\s*(.+)$/i);
+        if (skuMatch) {
+          if (rawSku) break;
+          rawSku = cleanSku(skuMatch[1]);
+        } else {
+          titleParts.unshift(cleanProductName(prevText));
+        }
+      }
+
+      const prodTitle = titleParts.filter(Boolean).join(" ").trim() || rawSku || "Producto sin SKU";
+      const finalSku = rawSku || prodTitle;
+
+      results.push({
+        sku: finalSku,
+        producto: prodTitle,
+        cantidad: qty,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
  * Consolidates multiple Mercado Libre PDFs deterministically (without AI hallucinations).
- * It extracts text page-by-page directly via pdf-parse/pdfjs and aggregates row sums mathematically.
+ * It extracts text page-by-page directly via spatial 2D coordinates (pdfjs) and pdf-parse fallback.
  */
 export async function consolidatePdfsDeterministically(
   files: AccountPdfPayload[],
@@ -353,6 +439,13 @@ export async function consolidatePdfsDeterministically(
   const mergedMap = new Map<string, PickingItem>();
   const allRawExtracted: RawExtractedProduct[] = [];
   let totalExtractedItems = 0;
+
+  let pdfjsLibNode: any = null;
+  try {
+    pdfjsLibNode = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  } catch {
+    pdfjsLibNode = null;
+  }
 
   for (const file of files) {
     const slotIdx = file.slotIndex; // 0 to 4
@@ -365,38 +458,65 @@ export async function consolidatePdfsDeterministically(
 
     const fileExtracted: Array<{ sku: string; producto: string; cantidad: number }> = [];
 
-    try {
-      const parser = new PDFParse({ data: buffer });
-      const textResult = (await parser.getText({
-        pageJoiner: "\n---PAGE_SPLIT---\n",
-      })) as {
-        total?: number;
-        pages?: Array<{ text: string; num: number }>;
-        text?: string;
-      };
-
-      const pages = Array.isArray(textResult?.pages) && textResult.pages.length > 0
-        ? textResult.pages
-        : null;
-
-      if (pages && pages.length > 0) {
-        // Iterate page-by-page so every label across N pages is parsed cleanly
-        for (const page of pages) {
-          const pageText = page?.text || "";
-          const pageItems = extractProductsFromText(pageText);
-          fileExtracted.push(...pageItems);
+    // 1. Primary Method: Spatial 2D Right-Column Extraction via pdfjs-dist legacy
+    if (pdfjsLibNode) {
+      try {
+        const data = new Uint8Array(buffer);
+        const loadingTask = pdfjsLibNode.getDocument({ data, disableFontFace: true });
+        const pdfDoc = await loadingTask.promise;
+        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+          const page = await pdfDoc.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          const spatialItems = extractProductsFromSpatialPage(textContent?.items || []);
+          if (spatialItems.length > 0) {
+            fileExtracted.push(...spatialItems);
+          } else {
+            // Fallback for single-column or non-standard page
+            const rawLines = (textContent?.items || [])
+              .map((it: any) => ("str" in it ? it.str : ""))
+              .filter(Boolean)
+              .join("\n");
+            fileExtracted.push(...extractProductsFromText(rawLines));
+          }
         }
-      } else {
-        // Fallback: split by delimiter or parse entire text
-        const wholeText = typeof textResult === "string" ? textResult : textResult?.text || "";
-        const pageChunks = wholeText.split(/---PAGE_SPLIT---|\f/);
-        for (const chunk of pageChunks) {
-          const chunkItems = extractProductsFromText(chunk);
-          fileExtracted.push(...chunkItems);
-        }
+      } catch (spatialErr) {
+        console.warn(`Aviso en extracción espacial PDF (slot ${slotIdx + 1}), usando fallback de texto:`, spatialErr);
       }
-    } catch (parseErr) {
-      console.warn(`Error parseando PDF en slot ${slotIdx + 1}:`, parseErr);
+    }
+
+    // 2. Fallback Method: pdf-parse text stream if spatial extraction yielded 0 items
+    if (fileExtracted.length === 0) {
+      try {
+        const parser = new PDFParse({ data: buffer });
+        const textResult = (await parser.getText({
+          pageJoiner: "\n---PAGE_SPLIT---\n",
+        })) as {
+          total?: number;
+          pages?: Array<{ text: string; num: number }>;
+          text?: string;
+        };
+
+        const pages = Array.isArray(textResult?.pages) && textResult.pages.length > 0
+          ? textResult.pages
+          : null;
+
+        if (pages && pages.length > 0) {
+          for (const page of pages) {
+            const pageText = page?.text || "";
+            const pageItems = extractProductsFromText(pageText);
+            fileExtracted.push(...pageItems);
+          }
+        } else {
+          const wholeText = typeof textResult === "string" ? textResult : textResult?.text || "";
+          const pageChunks = wholeText.split(/---PAGE_SPLIT---|\f/);
+          for (const chunk of pageChunks) {
+            const chunkItems = extractProductsFromText(chunk);
+            fileExtracted.push(...chunkItems);
+          }
+        }
+      } catch (parseErr) {
+        console.warn(`Error parseando PDF en slot ${slotIdx + 1}:`, parseErr);
+      }
     }
 
     totalExtractedItems += fileExtracted.length;

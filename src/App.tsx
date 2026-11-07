@@ -81,7 +81,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 const STORAGE_KEY_WORKING_DAY = "ferrehouse_picking_last_working_day";
-const STORAGE_KEY_SESSION_DATA = "ferrehouse_picking_session_data";
+const STORAGE_KEY_SESSION_DATA = "ferrehouse_picking_session_data_v3";
 
 function getLocalDateString(): string {
   const d = new Date();

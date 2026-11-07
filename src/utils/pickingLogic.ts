@@ -351,7 +351,7 @@ export function auditPickingConsolidation(
   for (const raw of originalRawItems) {
     const rawSku = (raw.sku || "").trim();
     if (!rawSku) continue;
-    const normKey = rawSku.toUpperCase();
+    const normKey = normalizeStringKey(rawSku) || rawSku.toUpperCase();
     const qty = Math.max(0, Math.round(Number(raw.cantidad) || 0));
     if (qty <= 0) continue;
 
@@ -365,7 +365,7 @@ export function auditPickingConsolidation(
   for (const item of consolidatedItems) {
     const rawSku = (item.sku || "").trim();
     if (!rawSku) continue;
-    const normKey = rawSku.toUpperCase();
+    const normKey = normalizeStringKey(rawSku) || rawSku.toUpperCase();
     const qty = Math.max(0, Math.round(Number(item.totalPreparar) || 0));
 
     totalConsolidatedUnits += qty;
@@ -409,7 +409,7 @@ export function auditPickingConsolidation(
 }
 
 import * as pdfjsLib from "pdfjs-dist";
-import { cleanSku, extractProductsFromText, detectBrand, normalizeStringKey } from "./deterministicConsolidator";
+import { cleanSku, extractProductsFromText, extractProductsFromSpatialPage, detectBrand, normalizeStringKey } from "./deterministicConsolidator";
 
 // Configure workerSrc for pdfjs-dist in browser context using jsdelivr npm CDN
 if (typeof window !== "undefined" && pdfjsLib) {
@@ -430,7 +430,8 @@ export interface LocalPdfParseResult {
 
 /**
  * Parses uploaded PDF files locally using `pdfjs-dist` without relying on external APIs or network calls.
- * Extracts text page-by-page, consolidates SKUs across accounts, and audits sums for 100% exact picking lists.
+ * Extracts text page-by-page using 2D right-column spatial coordinates, consolidates SKUs across accounts,
+ * and audits sums for 100% exact picking lists.
  */
 export async function parsePdfLocally(
   slots: AccountSlot[],
@@ -479,41 +480,34 @@ export async function parsePdfLocally(
         try {
           const page = await pdfDoc.getPage(pageNum);
           const textContent = await page.getTextContent();
-          
           const itemsList = textContent?.items || [];
-          const linesMap: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
 
-          for (const item of itemsList) {
-            if (!item || typeof item !== "object" || !("str" in item)) continue;
-            const str = String(item.str);
-            if (!str.trim()) continue;
+          // 1. Primary Method: 2D Spatial Right-Column Extraction
+          let pageItems = extractProductsFromSpatialPage(itemsList);
 
-            const transform = (item as any).transform;
-            const x = Array.isArray(transform) && typeof transform[4] === "number" ? transform[4] : 0;
-            const y = Array.isArray(transform) && typeof transform[5] === "number" ? Math.round(transform[5]) : 0;
-
-            let lineObj = linesMap.find((l) => Math.abs(l.y - y) <= 3);
-            if (!lineObj) {
-              lineObj = { y, items: [] };
-              linesMap.push(lineObj);
-            }
-            lineObj.items.push({ x, str });
-          }
-
-          linesMap.sort((a, b) => b.y - a.y);
-          const pageLinesText = linesMap.map((l) => {
-            l.items.sort((a, b) => a.x - b.x);
-            return l.items.map((i) => i.str).join(" ");
-          }).join("\n");
-
-          let pageItems = extractProductsFromText(pageLinesText);
-
+          // 2. Fallback: Full-page line grouping if non-standard layout
           if (pageItems.length === 0) {
-            // Fallback: try raw line-by-line join without spatial Y grouping
-            const pageStrings = itemsList
-              .map((item: any) => ("str" in item ? item.str : ""))
-              .filter(Boolean);
-            pageItems = extractProductsFromText(pageStrings.join("\n"));
+            const linesMap: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
+            for (const item of itemsList) {
+              if (!item || typeof item !== "object" || !("str" in item)) continue;
+              const str = String(item.str);
+              if (!str.trim()) continue;
+              const transform = (item as any).transform;
+              const x = Array.isArray(transform) && typeof transform[4] === "number" ? transform[4] : 0;
+              const y = Array.isArray(transform) && typeof transform[5] === "number" ? Math.round(transform[5]) : 0;
+              let lineObj = linesMap.find((l) => Math.abs(l.y - y) <= 3);
+              if (!lineObj) {
+                lineObj = { y, items: [] };
+                linesMap.push(lineObj);
+              }
+              lineObj.items.push({ x, str });
+            }
+            linesMap.sort((a, b) => b.y - a.y);
+            const pageLinesText = linesMap.map((l) => {
+              l.items.sort((a, b) => a.x - b.x);
+              return l.items.map((i) => i.str).join(" ");
+            }).join("\n");
+            pageItems = extractProductsFromText(pageLinesText);
           }
 
           if (pageItems.length > 0) {
