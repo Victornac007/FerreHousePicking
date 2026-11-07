@@ -70,9 +70,11 @@ export const PWAInstallButton: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-[#2d3277] flex items-center justify-center text-[#ffe600]">
-                <Smartphone className="w-5 h-5" />
-              </div>
+              <img
+                src="/logo-ferrehouse.png"
+                alt="FerreHouse"
+                className="w-10 h-10 rounded-xl object-contain shadow-xs border border-slate-200 bg-[#2d3277]"
+              />
               <div>
                 <h3 className="text-base font-bold text-slate-900">
                   Instalar en iPhone / iPad
@@ -136,9 +138,11 @@ export const PWAInstallButton: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-[#2d3277] flex items-center justify-center text-[#ffe600]">
-                <Download className="w-5 h-5" />
-              </div>
+              <img
+                src="/logo-ferrehouse.png"
+                alt="FerreHouse"
+                className="w-10 h-10 rounded-xl object-contain shadow-xs border border-slate-200 bg-[#2d3277]"
+              />
               <div>
                 <h3 className="text-base font-bold text-slate-900">
                   Instalar Aplicación en PC o Celular

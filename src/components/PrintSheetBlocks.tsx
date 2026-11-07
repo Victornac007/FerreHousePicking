@@ -19,9 +19,9 @@ export const PrintWorkOrderHeader: React.FC<PrintSheetBlocksProps> = ({
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <img
-            src="/assets/aistudio/1793621644265_3_b373221c.jpeg"
+            src="/logo-ferrehouse.png"
             alt="Logo FerreHouse"
-            className="w-7 h-7 rounded object-cover border border-black"
+            className="w-7 h-7 rounded object-contain border border-black bg-slate-900"
           />
           <div>
             <h1 className="text-sm font-black uppercase tracking-tight">

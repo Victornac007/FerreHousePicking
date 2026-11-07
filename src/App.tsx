@@ -546,9 +546,9 @@ export default function App() {
             className="flex items-center gap-2.5 text-base sm:text-lg font-extrabold tracking-tight text-[#2d3277] whitespace-nowrap shrink-0 hover:opacity-90 transition-opacity"
           >
             <img
-              src="/assets/aistudio/1793621644265_3_b373221c.jpeg"
+              src="/logo-ferrehouse.png"
               alt="Logo FerreHouse"
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover shadow-2xs border border-[#2d3277]/20"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-contain shadow-2xs border border-[#2d3277]/20 bg-[#2d3277]"
             />
             <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
               <span>Picking FerreHouse</span>
@@ -749,9 +749,9 @@ export default function App() {
         <div className="max-w-[1380px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
           <div className="flex items-center gap-2">
             <img
-              src="/assets/aistudio/1793621644265_3_b373221c.jpeg"
+              src="/logo-ferrehouse.png"
               alt="FerreHouse"
-              className="w-5 h-5 rounded object-cover shadow-2xs"
+              className="w-6 h-6 rounded-lg object-contain shadow-2xs bg-[#2d3277]"
             />
             <span>
               Picking FerreHouse · Sistema de Consolidación de Pedidos y Despacho para Bodega

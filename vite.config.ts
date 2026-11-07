@@ -11,7 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.jpeg', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['favicon.png', 'apple-touch-icon.png', 'logo-ferrehouse.png', 'icon.svg'],
         manifest: {
           id: '/',
           name: 'Picking FerreHouse — Mercado Libre',
