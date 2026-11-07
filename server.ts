@@ -54,13 +54,13 @@ app.post("/api/consolidate", async (req, res) => {
       ? accountNames
       : ["Cuenta ML 1", "Cuenta ML 2", "Cuenta ML 3", "Cuenta ML 4", "Cuenta ML 5"];
 
-    // 1. Ejecutar procesamiento determinista directo para establecer la línea base de conteo 100% verificado
+    // 1. Ejecutar procesamiento determinista directo para establecer conteo 100% verificado
     const deterministicResult = await consolidatePdfsDeterministically(files, names);
-    const deterministicUnits = deterministicResult.items.reduce((acc, i) => acc + i.totalPreparar, 0);
 
-    // 2. Intentar extracción Híbrida con Gemini AI si el cliente está configurado
-    if (aiClient && useGeminiAI !== false) {
+    // 2. Extracción con Gemini AI solo si se solicita explícitamente (por defecto: motor determinista exacto)
+    if (aiClient && useGeminiAI === true) {
       try {
+        const deterministicUnits = deterministicResult.items.reduce((acc, i) => acc + i.totalPreparar, 0);
         console.log("Iniciando extracción con Gemini AI (gemini-3.8-flash)...");
         const allRawExtracted: RawExtractedProduct[] = [];
         const mergedMap = new Map<string, PickingItem>();

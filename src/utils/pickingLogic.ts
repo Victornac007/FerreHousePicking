@@ -83,6 +83,11 @@ export function normalizePickingItems(rawItems: Array<Partial<PickingItem>>): Pi
         existing.cta4 +
         existing.cta5;
 
+      // Prefer uppercase or cleaner casing for the display SKU
+      if (/[A-Z]/.test(cleanSkuStr) && !/[A-Z]/.test(existing.sku)) {
+        existing.sku = cleanSkuStr;
+      }
+
       const rawTitle = (raw.producto || cleanSkuStr).trim();
       if (rawTitle && rawTitle.length > existing.producto.length) {
         existing.producto = rawTitle;
@@ -346,6 +351,7 @@ export function auditPickingConsolidation(
   consolidatedItems: PickingItem[]
 ): PickingAuditReport {
   const originalMap = new Map<string, number>();
+  const displaySkuMap = new Map<string, string>();
   let totalOriginalUnits = 0;
 
   for (const raw of originalRawItems) {
@@ -357,6 +363,9 @@ export function auditPickingConsolidation(
 
     totalOriginalUnits += qty;
     originalMap.set(normKey, (originalMap.get(normKey) || 0) + qty);
+    if (!displaySkuMap.has(normKey)) {
+      displaySkuMap.set(normKey, rawSku);
+    }
   }
 
   const consolidatedMap = new Map<string, number>();
@@ -370,6 +379,9 @@ export function auditPickingConsolidation(
 
     totalConsolidatedUnits += qty;
     consolidatedMap.set(normKey, (consolidatedMap.get(normKey) || 0) + qty);
+    if (!displaySkuMap.has(normKey)) {
+      displaySkuMap.set(normKey, rawSku);
+    }
   }
 
   const discrepancies: SkuDiscrepancy[] = [];
@@ -379,8 +391,9 @@ export function auditPickingConsolidation(
     const expected = originalMap.get(skuKey) || 0;
     const consolidated = consolidatedMap.get(skuKey) || 0;
     if (expected !== consolidated) {
+      const displaySku = displaySkuMap.get(skuKey) || skuKey;
       discrepancies.push({
-        sku: skuKey,
+        sku: displaySku,
         expectedUnits: expected,
         consolidatedUnits: consolidated,
         diff: consolidated - expected,

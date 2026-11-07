@@ -40,6 +40,14 @@ export function cleanSku(val: string): string {
   // Strip trailing "Cantidad: ..." or "Color: ..." if present on the same string
   s = s.replace(/\s*Cantidad\s*:\s*\d+.*/i, "").trim();
 
+  // If delimited by pipe or tab (e.g. "SKU: STA-STHT7088 | Producto"), isolate the SKU token
+  if (s.includes("|")) {
+    s = s.split("|")[0].trim();
+  }
+  if (s.includes("\t")) {
+    s = s.split("\t")[0].trim();
+  }
+
   // Strip leading/trailing symbols
   s = s.replace(/^[|·\-\s,;:]+|[|·\-\s,;:]+$/g, "").trim();
 
